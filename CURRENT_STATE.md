@@ -30,8 +30,20 @@ Public repo https://github.com/nolancasama/closed-circuit; GitHub Pages serves
 `main` root (static, no build; `.nojekyll`) at
 https://nolancasama.github.io/closed-circuit/ — pushing to `main` redeploys.
 
+## Playtest findings (2026-10-20, scripted real-time UI runs, not a human)
+- All real controls work (intercom, power switches, keypad clicks, hold buttons,
+  keys 1–4); no browser errors. Optimal shift 4.4 min (3 s/decision) to 6.6 min
+  (7 s/decision): both 3/3 escaped, well under the SPEC's 10–15 min target.
+- Flood is lenient: knowing the steps, Theo survives even at 30 s per step
+  (peak 61 %, lethal 96 %). After the intake closes the countdown jumps
+  ~0:59 → ~2:43, so steps 2–3 carry little tension.
+- START DRAIN is allowed with the vent fan off (plaque lists it as a
+  prerequisite); the player learns only from the VACUUM LOCK refusal mid-flood.
+  Intentional per SPEC "recoverable but costly" — open question for the user.
+
 ## Next Steps
-- Human playtest of a full shift for pacing/difficulty (flood timer, hesitation).
+- Decide flood tuning (see findings) and whether START should require the fan.
+- A real human playtest is still worth doing for feel/confusion/audio.
 
 ## Codex / Delegated Work
 None in flight.

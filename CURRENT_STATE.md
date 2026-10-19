@@ -9,7 +9,8 @@ report). `SPEC.md` is the authoritative design.
 - Pure headless engine + scenario (`src/engine`, `src/scenarios/three-chambers`),
   Canvas 2D renderer with per-room painters, DOM UI (intercom, console, keypad,
   inspection, notes), synthesised WebAudio.
-- 23 node tests (`npm test`) incl. full playthroughs; all pass.
+- 23 node tests (`npm test`) incl. full playthroughs; all pass. `npm run smoke`
+  plays a full shift in headless Chromium and fails on browser errors or a bad ending.
 - Debug handle `window.__cc` (`game`, `app`) used by Playwright scripts for
   screenshot playthroughs (Playwright lives in `C:/Users/nolan/ui-verify`).
 
@@ -22,7 +23,7 @@ report). `SPEC.md` is the authoritative design.
   (narrow); narrow inspection card resized so ZOOM OUT is visible.
 
 ## Known Issues
-- `npm run smoke` points at `tools/browser-smoke.mjs`, which does not exist.
+- None known.
 
 ## Hosting
 Public repo https://github.com/nolancasama/closed-circuit; GitHub Pages serves
@@ -31,7 +32,6 @@ https://nolancasama.github.io/closed-circuit/ — pushing to `main` redeploys.
 
 ## Next Steps
 - Human playtest of a full shift for pacing/difficulty (flood timer, hesitation).
-- Add the browser smoke script or drop the `smoke` npm script.
 
 ## Codex / Delegated Work
 None in flight.

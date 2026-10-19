@@ -23,12 +23,15 @@ report). `SPEC.md` is the authoritative design.
 
 ## Known Issues
 - `npm run smoke` points at `tools/browser-smoke.mjs`, which does not exist.
-- Not a git repository yet (no baseline commit), so delegation warns.
+
+## Hosting
+Public repo https://github.com/nolancasama/closed-circuit; GitHub Pages serves
+`main` root (static, no build; `.nojekyll`) at
+https://nolancasama.github.io/closed-circuit/ — pushing to `main` redeploys.
 
 ## Next Steps
 - Human playtest of a full shift for pacing/difficulty (flood timer, hesitation).
 - Add the browser smoke script or drop the `smoke` npm script.
-- Optional: git init + baseline commit when the user wants it.
 
 ## Codex / Delegated Work
 None in flight.

@@ -9,12 +9,26 @@ report). `SPEC.md` is the authoritative design.
 - Pure headless engine + scenario (`src/engine`, `src/scenarios/three-chambers`),
   Canvas 2D renderer with per-room painters, DOM UI (intercom, console, keypad,
   inspection, notes), synthesised WebAudio.
+- Console is a physical control desk (`src/ui/console.js` + reusable
+  `src/ui/hardware/` gauges/toggles/lamps/buttons, styles in `board.css`), with
+  an expanded board, on by default on wide screens (BOARD button / key B,
+  remembered in localStorage).
 - 23 node tests (`npm test`) incl. full playthroughs; all pass. `npm run smoke`
   plays a full shift in headless Chromium and fails on browser errors or a bad ending.
 - Debug handle `window.__cc` (`game`, `app`) used by Playwright scripts for
   screenshot playthroughs (Playwright lives in `C:/Users/nolan/ui-verify`).
 
-## Recent Work (2026-10-20)
+## Recent Work (2026-11-22)
+- Industrial control-desk redesign of the Operator console (see
+  DESIGN_DECISIONS). Verified: `npm test`, `npm run smoke`, and a scripted
+  real-click pass (toggles, isolator refusal, force-on arm → trip, guard+hold
+  drain, relief refusal, door interlock, override bay) at 1366×657 compact and
+  expanded, plus screenshots at 1366×768 and 412×860. Not yet human-played.
+- Fixed: completing a hold no longer re-presses the control on release.
+- Smoke needs Playwright's own Chromium build; `npx playwright install chromium`
+  in `C:/Users/nolan/ui-verify` if it reports a missing executable.
+
+## Earlier Work (2026-10-20)
 - Visual pass verified from rendered screenshots at 1366×657 and 412×860:
   unlit Chamber A readable, REC/timestamp no longer overlap.
 - Newly unlocked overrides scroll into view and flash; the EXIT SEALED log line
@@ -43,7 +57,9 @@ https://nolancasama.github.io/closed-circuit/ — pushing to `main` redeploys.
 
 ## Next Steps
 - Decide flood tuning (see findings) and whether START should require the fan.
-- A real human playtest is still worth doing for feel/confusion/audio.
+- A real human playtest is still worth doing for feel/confusion/audio — now
+  including the new board (guard + hold friction during the flood, whether
+  expanded should be the default on wide screens).
 
 ## Codex / Delegated Work
 None in flight.

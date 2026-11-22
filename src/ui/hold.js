@@ -2,6 +2,9 @@
 // need to be held down for seconds() to confirm. Mouse, touch and keyboard.
 export function actionButton(button, { isHold, seconds, onFire }) {
   let start = 0, raf = 0, holding = false;
+  // The release that ends a completed hold still produces a click; swallow it so
+  // the (now not-ready) control is not pressed a second time. Any new press clears it.
+  let swallow = false;
 
   const reset = () => {
     holding = false;
@@ -14,7 +17,7 @@ export function actionButton(button, { isHold, seconds, onFire }) {
     if (!holding) return;
     const p = Math.min(1, (performance.now() - start) / (seconds() * 1000));
     button.style.setProperty('--p', String(p));
-    if (p >= 1) { reset(); onFire(); return; }
+    if (p >= 1) { reset(); swallow = true; onFire(); return; }
     raf = requestAnimationFrame(tick);
   };
 
@@ -27,6 +30,7 @@ export function actionButton(button, { isHold, seconds, onFire }) {
   };
 
   button.addEventListener('pointerdown', e => {
+    swallow = false;
     if (e.button !== 0 || !isHold()) return;
     e.preventDefault();
     button.setPointerCapture?.(e.pointerId);
@@ -37,13 +41,16 @@ export function actionButton(button, { isHold, seconds, onFire }) {
   button.addEventListener('lostpointercapture', reset);
   button.addEventListener('contextmenu', e => { if (isHold()) e.preventDefault(); });
   button.addEventListener('keydown', e => {
-    if ((e.key === ' ' || e.key === 'Enter') && isHold()) {
+    if (e.key !== ' ' && e.key !== 'Enter') return;
+    if (!e.repeat && !holding) swallow = false;
+    if (isHold()) {
       e.preventDefault();
       if (!e.repeat) begin();
     }
   });
   button.addEventListener('keyup', e => { if (e.key === ' ' || e.key === 'Enter') reset(); });
   button.addEventListener('click', e => {
+    if (swallow) { swallow = false; e.preventDefault(); return; }
     if (isHold()) { e.preventDefault(); return; }
     onFire();
   });

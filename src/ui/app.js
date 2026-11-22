@@ -50,7 +50,7 @@ export function createApp({ renderer, audio, onRestart }) {
     onSelect: pid => followPrisoner(pid),
   });
   const consoleUi = createConsole({
-    powerEl: $('powerPanel'), systemsEl: $('systemsPanel'), doorsEl: $('doorsPanel'), overridesEl: $('overridesPanel'),
+    rootEl: $('console'), instrumentsEl: $('instrumentsPanel'), powerEl: $('powerPanel'), systemsEl: $('systemsPanel'), doorsEl: $('doorsPanel'), overridesEl: $('overridesPanel'),
     keypadEl, dispatch: act, audio,
     onKeypad: open => { if (open) { closeNotes(); focusFeed('A'); } },
   });
@@ -136,6 +136,21 @@ export function createApp({ renderer, audio, onRestart }) {
   });
   $('inspectClose').addEventListener('click', closeInspect);
   $('btnAll').addEventListener('click', () => { audio.ui('click'); showGrid(); });
+  // Expanded control board: a remembered per-viewer preference.
+  const BOARD_KEY = 'closed-circuit.board';
+  function setBoard(expanded, save = true) {
+    desk.dataset.board = expanded ? 'expanded' : 'compact';
+    $('btnBoard').setAttribute('aria-pressed', expanded ? 'true' : 'false');
+    setClass($('btnBoard'), 'on', expanded);
+    if (save) try { localStorage.setItem(BOARD_KEY, expanded ? '1' : '0'); } catch { /* storage unavailable */ }
+  }
+  const toggleBoard = () => { audio.ui('click'); setBoard(desk.dataset.board !== 'expanded'); };
+  // Default: expanded (the CSS only widens the board on wide screens).
+  let boardPref = true;
+  try { boardPref = localStorage.getItem(BOARD_KEY) !== '0'; } catch { /* storage unavailable */ }
+  setBoard(boardPref, false);
+  $('btnBoard').addEventListener('click', toggleBoard);
+
   $('btnGrid').addEventListener('click', () => { audio.ui('click'); if (mode === 'grid') focusFeed(focus || 'A'); else showGrid(); });
 
   // ---------- notes ----------
@@ -240,6 +255,7 @@ export function createApp({ renderer, audio, onRestart }) {
     if (n >= 1 && n <= 4) focusFeed(FEEDS[n - 1], true);
     else if (e.key === 'g' || e.key === 'G') mode === 'grid' ? focusFeed(focus || 'A', true) : showGrid();
     else if (e.key === 'n' || e.key === 'N') notesEl.hidden ? openNotes() : closeNotes();
+    else if (e.key === 'b' || e.key === 'B') toggleBoard();
   });
 
   // Title screen static.

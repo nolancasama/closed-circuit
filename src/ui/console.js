@@ -1,194 +1,371 @@
-// Facility console: power, chamber systems, doors, overrides and the
-// restraint keypad drawer. Everything acts through dispatch().
+// Facility console, built as a physical control desk: instruments, the power
+// switch bank, chamber systems, door controls, the emergency-override bay and
+// the restraint keypad drawer. Hardware pieces live in ./hardware/ and know
+// nothing about the game; this file maps game state onto them every frame.
+// Everything acts through dispatch() — the board never changes state itself.
+//
+// Test hooks: every control container carries data-control="<control id>"
+// (doors use the door id); the restraint ACCESS key keeps class "act".
+import { FLOOD } from '../config.js';
 import { h, setText, setClass, symbolSvg, symbolLabel } from './dom.js';
-import { actionButton } from './hold.js';
+import { createGauge } from './hardware/gauge.js';
+import { createLamp, createToggle } from './hardware/switches.js';
+import { createPushbutton, createGuard, createKeySwitch } from './hardware/buttons.js';
 
 const MSG_MS = 4200;
+const TONE_LAMP = { ok: ['green', 'on'], warn: ['amber', 'on'], alert: ['red', 'blink'], info: ['white', 'on'], dim: ['green', 'off'] };
 
-export function createConsole({ powerEl, systemsEl, doorsEl, overridesEl, keypadEl, dispatch, audio, onKeypad }) {
+// Lamp clusters for status-only controls. Each entry: [legend, colour, (view) => state].
+const STATUS_LAMPS = {
+  aux: [
+    ['UNSTABLE', 'red', v => (v.tone === 'alert' ? 'blink' : 'off')],
+    ['OVERRIDE', 'amber', v => (v.tone === 'warn' ? 'on' : 'off')],
+    ['STABLE', 'green', v => (v.tone === 'ok' ? 'on' : 'off')],
+  ],
+  vent: [
+    ['DAMPER OPEN', 'green', v => (/DAMPER OPEN/.test(v.status) ? 'on' : 'off')],
+    ['FAN POWER', 'green', v => (/FAN RUNNING/.test(v.status) ? 'on' : 'off')],
+  ],
+};
+
+const reducedMotion = () => window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+
+export function createConsole({ rootEl, instrumentsEl, powerEl, systemsEl, doorsEl, overridesEl, keypadEl, dispatch, audio, onKeypad }) {
   let game = null;
+  let inst = null;
   let power = null;
-  let rows = { systems: new Map(), doors: new Map(), overrides: new Map() };
-  let doorRows = new Map();
+  let mods = { systems: new Map(), doors: new Map(), overrides: new Map() };
+  let doorMods = new Map();
+  let exitPanel = null;
+  let doorExtra = null;
+  let bay = null;
   let keypad = null;
   let sectionKeys = {};
+  let wasTripped = false;
+
+  const plate = (text, cls = '') => h('div', { class: `plate ${cls}`.trim() }, text);
+  const header = (title, ...extra) => h('h3', {}, h('span', { class: 'engrave' }, title), ...extra);
 
   function setGame(g) {
     game = g;
-    rows = { systems: new Map(), doors: new Map(), overrides: new Map() };
-    doorRows = new Map();
+    mods = { systems: new Map(), doors: new Map(), overrides: new Map() };
+    doorMods = new Map();
     sectionKeys = {};
+    wasTripped = g.state.power.tripped;
+    buildInstruments();
     buildPower();
-    systemsEl.replaceChildren(h('h3', {}, 'CHAMBER SYSTEMS'));
-    doorsEl.replaceChildren(h('h3', {}, 'DOORS'));
-    overridesEl.replaceChildren(h('h3', {}, 'EMERGENCY OVERRIDES'));
-    for (const id of Object.keys(game.state.doors)) {
-      const r = makeRow({ id, kind: 'door' });
-      doorRows.set(id, r);
-      doorsEl.append(r.row);
-    }
+    systemsEl.replaceChildren(header('CHAMBER SYSTEMS'), h('div', { class: 'mod-grid' }));
+    buildDoors();
+    buildBay();
     closeKeypad();
   }
 
-  function show(r, res) {
+  // Message feedback under a control; refusals also flash the module red.
+  function show(m, res) {
     if (!res || !res.msg) return;
-    r.msgText = res.msg;
-    r.msgOk = !!res.ok;
-    r.msgUntil = performance.now() + MSG_MS;
-    r.row.classList.remove('flash');
-    void r.row.offsetWidth;
-    r.row.classList.add('flash');
+    // A forced switch-on "succeeds" but trips the main: present it as a fault.
+    const good = !!res.ok && res.code !== 'tripped';
+    m.msgText = res.msg;
+    m.msgOk = good;
+    m.msgUntil = performance.now() + MSG_MS;
+    const cls = good ? 'flash' : 'deny';
+    m.el.classList.remove('flash', 'deny');
+    void m.el.offsetWidth;
+    m.el.classList.add(cls);
   }
 
-  // ---------- power ----------
+  function paintMsg(m) {
+    const live = m.msgUntil && performance.now() < m.msgUntil;
+    setText(m.msg, live ? m.msgText : '');
+    m.msg.hidden = !live;
+    setClass(m.msg, 'bad', live && !m.msgOk);
+    setClass(m.msg, 'good', live && m.msgOk);
+  }
+
+  // ---------- instruments ----------
+  function buildInstruments() {
+    const cap = game.state.power.capacity;
+    const amm = createGauge({
+      title: 'MAIN LOAD', unit: 'AMPS', min: 0, max: cap * 1.5, major: 5, minor: 1,
+      zones: [{ from: cap * 0.8, to: cap, tone: 'amber' }, { from: cap, to: cap * 1.5, tone: 'red' }],
+    });
+    const aux = createGauge({
+      title: 'AUX PRESSURE · B', unit: 'BAR', min: 0, max: 10, major: 5, minor: 1,
+      zones: [{ from: 4, to: 6, tone: 'green' }, { from: 6.4, to: 7.8, tone: 'amber' }, { from: 8, to: 10, tone: 'red' }],
+    });
+    const water = createGauge({
+      title: 'CHAMBER B LEVEL', unit: '%', min: 0, max: 100, major: 25, minor: 5,
+      zones: [{ from: 60, to: 80, tone: 'amber' }, { from: 80, to: 100, tone: 'red' }],
+    });
+    for (const g of [amm, aux, water]) g.el.classList.add('housing');
+    amm.el.dataset.control = 'gauge-load';
+    aux.el.dataset.control = 'gauge-aux';
+    water.el.dataset.control = 'gauge-water';
+    instrumentsEl.replaceChildren(header('INSTRUMENTS'), h('div', { class: 'gauges' }, amm.el, aux.el, water.el));
+    inst = { amm, aux, water };
+  }
+
+  function updateInstruments() {
+    const st = game.state, pw = st.power, s = game.api.s;
+    const load = game.api.load();
+    const armed = pw.armed && st.t <= pw.armed.until ? pw.circuits[pw.armed.id] : null;
+    // No current flows through a tripped main; the drag pointer still shows what is switched in.
+    inst.amm.set(pw.tripped ? 0 : load, {
+      pointer: armed ? load + armed.amps : pw.tripped ? load : null,
+      readout: pw.tripped ? `TRIPPED · ${load} A SWITCHED` : armed ? `${load} A → ${load + armed.amps} A?` : `${load} / ${pw.capacity} A`,
+      tone: pw.tripped || armed ? 'alert' : load >= pw.capacity * 0.8 ? 'warn' : '',
+    });
+    const t = performance.now() / 1000;
+    const waver = reducedMotion() ? 0 : Math.sin(t * 7.1) * 0.35 + Math.sin(t * 2.3) * 0.45;
+    const auxVal = s.aux === 'stable' ? 5 : s.aux === 'forced' ? 7.1 : 8.9 + waver;
+    inst.aux.set(auxVal, {
+      readout: s.aux === 'stable' ? 'STABLE' : s.aux === 'forced' ? 'FORCED · OVERRIDE' : 'UNSTABLE',
+      tone: s.aux === 'stable' ? 'ok' : s.aux === 'forced' ? 'warn' : 'alert',
+    });
+    const f = s.flood;
+    const pctLevel = Math.max(0, Math.min(100, (f.level / FLOOD.lethal) * 100));
+    const drain = game.controls().find(c => c.id === 'drain');
+    // Filling status reads "FILLING 42% · 0:59"; keep only the time left.
+    const tail = f.phase === 'filling' ? (drain?.status.split(' · ')[1] || '') : f.phase === 'draining' ? (f.stall ? 'STALLED' : 'DRAINING') : f.phase === 'done' ? 'DRAINED' : '';
+    inst.water.set(pctLevel, {
+      readout: f.phase === 'idle' ? 'DRY' : `${Math.round(pctLevel)}%${tail ? ` · ${tail}` : ''}`,
+      tone: f.phase === 'filling' ? 'alert' : f.phase === 'draining' ? 'warn' : f.phase === 'done' ? 'ok' : '',
+    });
+  }
+
+  // ---------- power switch bank ----------
   function buildPower() {
     const st = game.state;
-    const val = h('span', { class: 'val' });
-    const bar = h('div', { class: 'loadbar', 'aria-hidden': 'true' }, Array.from({ length: st.power.capacity }, () => h('span')));
-    const main = h('div', { class: 'mainline' });
-    const msg = h('div', { class: 'msg' });
+    const mainLamp = createLamp('red');
+    const mainText = h('span', { class: 'main-text' });
+    const main = h('span', { class: 'mainline' }, plate('MAIN BREAKER', 'small'), mainLamp.el, mainText);
     const circs = new Map();
-    const list = [];
-    for (const id of st.power.order) {
+    const bank = h('div', { class: 'bank' });
+    st.power.order.forEach((id, i) => {
       const c = st.power.circuits[id];
-      const sw = h('button', { class: 'sw', type: 'button', 'aria-label': `${c.label} switch` });
-      const row = h('div', { class: 'circ' }, h('span', { class: 'nm', title: c.label }, c.short), h('span', { class: 'amps' }, `${c.amps} A`), sw);
-      sw.addEventListener('click', () => {
-        const cur = game.state.power.circuits[id];
-        const res = dispatch({ type: 'power', circuit: id, on: !cur.on });
-        show(power, res);
+      const tog = createToggle({
+        label: `${c.label} switch`,
+        onPress: () => {
+          const cur = game.state.power.circuits[id];
+          show(power, dispatch({ type: 'power', circuit: id, on: !cur.on }));
+        },
       });
-      circs.set(id, { row, sw });
-      list.push(row);
-    }
-    powerEl.replaceChildren(h('h3', {}, 'POWER', val), bar, main, ...list, msg);
-    power = { val, bar, main, circs, msg, row: powerEl };
+      const lamp = createLamp('green');
+      const name = h('div', { class: 'cct-name', title: c.label }, c.short);
+      const cct = h('div', { class: 'cct', dataset: { control: `power-${id}` } },
+        h('div', { class: 'cct-top' }, h('span', { class: 'cct-no' }, `CCT ${String(i + 1).padStart(2, '0')}`), lamp.el),
+        tog.el, name, h('div', { class: 'cct-amps' }, `${c.amps} A`));
+      circs.set(id, { tog, lamp, name, cct, short: c.short });
+      bank.append(cct);
+    });
+    const msg = h('div', { class: 'msg', hidden: true });
+    powerEl.replaceChildren(header('POWER DISTRIBUTION', main), bank, msg);
+    power = { el: powerEl, mainLamp, mainText, main, circs, msg };
   }
 
   function updatePower() {
     const pw = game.state.power;
-    const load = game.api.load();
-    setText(power.val, `${load} / ${pw.capacity} A`);
-    setClass(power.bar, 'trip', pw.tripped);
-    [...power.bar.children].forEach((seg, i) => {
-      setClass(seg, 'on', i < Math.min(load, pw.capacity));
-      setClass(seg, 'over', load > pw.capacity && i >= pw.capacity - (load - pw.capacity));
-    });
-    setText(power.main, pw.tripped ? 'MAIN BREAKER: TRIPPED — Ruth must reset it' : 'MAIN BREAKER: CLOSED');
-    setClass(power.main, 'tone-alert', pw.tripped);
-    setClass(power.main, 'tone-dim', !pw.tripped);
+    if (pw.tripped && !wasTripped && !reducedMotion()) {
+      rootEl.classList.remove('flicker');
+      void rootEl.offsetWidth;
+      rootEl.classList.add('flicker');
+    }
+    wasTripped = pw.tripped;
+    power.mainLamp.set(pw.tripped ? 'blink' : 'on', pw.tripped ? 'red' : 'green');
+    setText(power.mainText, pw.tripped ? 'TRIPPED — Ruth must reset it in Room C' : 'CLOSED');
+    setClass(power.main, 'tripped', pw.tripped);
     for (const [id, r] of power.circs) {
       const c = pw.circuits[id];
-      const armed = pw.armed && pw.armed.id === id && game.state.t <= pw.armed.until;
+      const armed = !!(pw.armed && pw.armed.id === id && game.state.t <= pw.armed.until);
       const live = c.on && !c.isolated && !pw.tripped;
-      setText(r.sw, c.isolated ? 'ISOLATED' : armed ? 'FORCE ON?' : c.on ? (live ? 'ON' : 'ON · DEAD') : 'OFF');
-      setClass(r.sw, 'iso', c.isolated);
-      setClass(r.sw, 'on', live);
-      setClass(r.sw, 'dead', c.on && !c.isolated && pw.tripped);
-      setClass(r.sw, 'armed', !!armed);
-      r.sw.setAttribute('aria-pressed', c.on ? 'true' : 'false');
+      r.tog.set({ on: c.on, armed, tag: c.isolated ? 'ISOLATED · ROOM C' : '' });
+      r.lamp.set(armed ? 'blink' : live ? 'on' : 'off', armed ? 'amber' : 'green');
+      setText(r.name, armed ? 'FORCE ON?' : r.short);
+      setClass(r.cct, 'armed', armed);
+      setClass(r.cct, 'iso', c.isolated);
+      setClass(r.cct, 'dead', c.on && !c.isolated && pw.tripped);
     }
     paintMsg(power);
   }
 
-  // ---------- generic rows ----------
-  function makeRow(c) {
-    const lbl = h('div', { class: 'lbl' });
-    const head = h('div', { class: 'row-head' }, lbl);
-    const stt = h('div', { class: 'stt' });
-    const det = h('div', { class: 'det' });
-    const msg = h('div', { class: 'msg' });
-    const row = h('div', { class: 'row', dataset: { control: c.id } }, head, stt, det, msg);
-    const r = { row, lbl, stt, det, msg, btn: null, view: null, id: c.id, kind: c.kind };
-    if (c.kind === 'door') {
-      r.btn = h('button', { class: 'act', type: 'button' });
-      r.btn.addEventListener('click', () => {
-        const open = !game.state.doors[c.id].open;
-        show(r, dispatch({ type: 'door', door: c.id, open }));
-      });
-      head.append(r.btn);
-    } else if (c.kind === 'keypad') {
-      r.btn = h('button', { class: 'act', type: 'button' });
-      r.btn.addEventListener('click', () => { audio.ui('click'); openKeypad(c.id); });
-      head.append(r.btn);
-    } else if (c.kind !== 'status') {
-      r.btn = h('button', { class: 'act', type: 'button' });
-      if (c.kind === 'hold') {
-        actionButton(r.btn, {
-          isHold: () => !!r.view?.ready,
-          seconds: () => r.view?.hold || 1.2,
-          onFire: () => show(r, dispatch({ type: 'control', id: c.id })),
-        });
-      } else {
-        r.btn.addEventListener('click', () => show(r, dispatch({ type: 'control', id: c.id })));
+  // ---------- control modules (systems / doors / overrides) ----------
+  function makeModule(c, section) {
+    const m = { id: c.id, kind: c.kind, view: null, msgText: '', msgOk: true, msgUntil: 0, lamps: [] };
+    const lampBox = h('div', { class: 'mod-lamps' });
+    const defs = STATUS_LAMPS[c.id];
+    if (defs) {
+      for (const [legend, color, fn] of defs) {
+        const l = createLamp(color, legend);
+        m.lamps.push({ l, fn });
+        lampBox.append(l.el);
       }
-      head.append(r.btn);
+    } else {
+      const l = createLamp('green');
+      m.lamps.push({ l, fn: v => TONE_LAMP[v.tone] || TONE_LAMP.dim, tone: true });
+      lampBox.append(l.el);
     }
-    return r;
-  }
-
-  function paintMsg(r) {
-    const live = r.msgUntil && performance.now() < r.msgUntil;
-    setText(r.msg, live ? r.msgText : '');
-    setClass(r.msg, 'bad', live && !r.msgOk);
-    setClass(r.msg, 'good', live && r.msgOk);
-  }
-
-  function paintRow(r, v, hold = false) {
-    r.view = v;
-    setText(r.lbl, v.label);
-    setText(r.stt, v.status || '');
-    for (const t of ['ok', 'warn', 'alert', 'dim', 'info']) setClass(r.stt, `tone-${t}`, v.tone === t);
-    setText(r.det, v.detail || '');
-    r.det.hidden = !v.detail;
-    if (r.btn) {
-      const label = hold && v.ready ? `HOLD · ${v.action}` : v.action || '';
-      setText(r.btn, label);
-      setClass(r.btn, 'ready', !!v.ready);
-      setClass(r.btn, 'hold', hold && !!v.ready);
-      setClass(r.btn, 'danger', r.id === 'leave' || r.id === 'drain' || r.id.startsWith('ov-'));
+    m.plate = plate('', 'mod-plate');
+    m.stt = h('div', { class: 'stt' });
+    m.msg = h('div', { class: 'msg', hidden: true });
+    let act = null;
+    if (c.kind === 'keypad') {
+      const ks = createKeySwitch({ label: 'Open restraint keypad', caption: 'ACCESS', onPress: () => { audio.ui('key'); openKeypad(c.id); } });
+      act = ks.el;
+    } else if (c.kind === 'hold') {
+      let guard = null;
+      const pb = createPushbutton({
+        label: c.id, color: section === 'doors' ? 'amber' : 'red', size: 'md',
+        hold: { isHold: () => !!m.view?.ready, seconds: () => m.view?.hold || 1.2 },
+        onFire: () => { show(m, dispatch({ type: 'control', id: c.id })); guard?.close(); },
+      });
+      m.pb = pb;
+      if (section === 'overrides') act = pb.el; // the bay cover is the guard
+      else {
+        guard = createGuard({ label: c.id, inner: pb, onOpen: () => audio.ui('click') });
+        m.guard = guard;
+        act = guard.el;
+      }
+      act = h('div', { class: 'act-wrap' }, act, m.holdCap = h('div', { class: 'hold-cap' }));
+    } else if (c.kind === 'button') {
+      const pb = createPushbutton({ label: c.id, color: 'red', size: 'lg', onFire: () => show(m, dispatch({ type: 'control', id: c.id })) });
+      m.pb = pb;
+      act = h('div', { class: 'act-wrap' }, pb.el, m.holdCap = h('div', { class: 'hold-cap' }));
     }
-    paintMsg(r);
+    m.el = h('div', { class: `module kind-${c.kind}`, dataset: { control: c.id } },
+      h('div', { class: 'mod-head' }, m.plate, lampBox),
+      h('div', { class: 'mod-body' }, m.stt, act),
+      m.msg);
+    return m;
   }
 
-  function syncSection(section, el, controls) {
-    const map = rows[section];
+  function paintModule(m, v) {
+    m.view = v;
+    setText(m.plate, v.label);
+    if (m.pb) m.pb.btn.setAttribute('aria-label', `${v.label}: ${v.action || ''}`);
+    if (m.guard) m.guard.lid.setAttribute('aria-label', `Lift guard: ${v.label}`);
+    setText(m.stt, v.status || '');
+    for (const t of ['ok', 'warn', 'alert', 'dim', 'info']) setClass(m.stt, `tone-${t}`, v.tone === t);
+    for (const { l, fn, tone } of m.lamps) {
+      const r = fn(v);
+      if (tone) l.set(r[1], r[0]); else l.set(r);
+    }
+    if (m.pb) {
+      const hold = m.kind === 'hold' && !!v.ready;
+      m.pb.set({ ready: !!v.ready, caption: v.action || '', holdable: hold });
+      setText(m.holdCap, hold ? `HOLD ${v.hold || 1.2}s` : v.ready ? 'PRESS' : '');
+    }
+    paintMsg(m);
+  }
+
+  function syncSection(section, el, controls, onFresh) {
+    const map = mods[section];
     const list = controls.filter(c => c.section === section);
     const key = list.map(c => c.id).join(',');
     if (sectionKeys[section] !== key) {
       sectionKeys[section] = key;
-      for (const [id, r] of map) if (!list.some(c => c.id === id)) { r.row.remove(); map.delete(id); }
+      for (const [id, m] of map) if (!list.some(c => c.id === id)) { m.guard?.close(); m.el.remove(); map.delete(id); }
       for (const c of list) {
         const fresh = !map.has(c.id);
-        if (fresh) { const r = makeRow(c); map.set(c.id, r); }
-        el.append(map.get(c.id).row);
-        // A newly unlocked override is often the only way forward; never leave it below the fold.
-        if (fresh && section === 'overrides') {
-          const row = map.get(c.id).row;
-          row.classList.add('fresh');
-          row.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-        }
+        if (fresh) map.set(c.id, makeModule(c, section));
+        el.append(map.get(c.id).el);
+        if (fresh) onFresh?.(map.get(c.id));
       }
     }
-    for (const c of list) paintRow(map.get(c.id), c, c.kind === 'hold');
+    for (const c of list) paintModule(map.get(c.id), c);
     return list.length;
+  }
+
+  // ---------- doors ----------
+  function buildDoors() {
+    const switches = h('div', { class: 'door-bank' });
+    for (const id of Object.keys(game.state.doors)) {
+      if (id === 'exit') continue;
+      const d = game.state.doors[id];
+      const m = { id, msgText: '', msgOk: true, msgUntil: 0 };
+      m.tog = createToggle({
+        label: `${d.label} door`, variant: 'rocker', legends: ['OPEN', 'LOCK'],
+        onPress: () => show(m, dispatch({ type: 'door', door: id, open: !game.state.doors[id].open })),
+      });
+      m.open = createLamp('green', 'OPEN');
+      m.lock = createLamp('amber', 'LOCK');
+      m.stt = h('div', { class: 'stt' });
+      m.msg = h('div', { class: 'msg', hidden: true });
+      m.el = h('div', { class: 'door', dataset: { control: id } },
+        plate(d.label, 'door-plate'), h('div', { class: 'door-lamps' }, m.open.el, m.lock.el), m.tog.el, m.stt, m.msg);
+      doorMods.set(id, m);
+      switches.append(m.el);
+    }
+    const exitLamps = h('div', { class: 'exit-lamps' });
+    const exitStt = h('div', { class: 'stt' });
+    exitPanel = game.state.doors.exit ? { lamps: new Map(), box: exitLamps, stt: exitStt } : null;
+    doorExtra = h('div', { class: 'door-extra' });
+    doorsEl.replaceChildren(header('DOOR CONTROL'), switches,
+      exitPanel ? h('div', { class: 'exit-panel', dataset: { control: 'exit' } }, plate(game.state.doors.exit.label, 'mod-plate'), exitLamps, exitStt) : '',
+      doorExtra);
+  }
+
+  function updateDoors(controls) {
+    for (const [id, m] of doorMods) {
+      const v = game.scenario.doorView(game.api, id);
+      const interlocked = !game.state.doors[id].open && !!v.detail && v.canToggle;
+      m.tog.set({ on: game.state.doors[id].open, tag: v.canToggle ? '' : 'LATCHED OPEN' });
+      m.open.set(game.state.doors[id].open ? 'on' : 'off');
+      m.lock.set(game.state.doors[id].open ? 'off' : 'on', interlocked ? 'red' : 'amber');
+      setText(m.stt, v.detail && v.canToggle ? v.detail : v.status);
+      for (const t of ['ok', 'warn', 'alert', 'dim', 'info']) setClass(m.stt, `tone-${t}`, v.tone === t);
+      paintMsg(m);
+    }
+    if (exitPanel) {
+      const v = game.scenario.doorView(game.api, 'exit');
+      // The exit view lists its interlock lamps as "NAME ●" / "NAME ○" tokens.
+      const tokens = [...(v.detail || '').matchAll(/([A-Z][A-Z ]*?)\s*([●○])/g)].map(t => [t[1].trim(), t[2] === '●']);
+      tokens.push(['OPEN', /^OPEN/.test(v.status)]);
+      for (const [name, lit] of tokens) {
+        if (!exitPanel.lamps.has(name)) {
+          const l = createLamp('green', name);
+          exitPanel.lamps.set(name, l);
+          exitPanel.box.append(l.el);
+        }
+        exitPanel.lamps.get(name).set(lit ? 'on' : 'off');
+      }
+      setText(exitPanel.stt, v.status);
+      for (const t of ['ok', 'warn', 'alert', 'dim', 'info']) setClass(exitPanel.stt, `tone-${t}`, v.tone === t);
+    }
+    syncSection('doors', doorExtra, controls);
+  }
+
+  // ---------- emergency override bay ----------
+  function buildBay() {
+    const content = h('div', { class: 'bay-content' });
+    const cover = h('div', { class: 'bay-cover', 'aria-hidden': 'true' },
+      h('div', { class: 'bay-stencil' }, h('b', {}, 'EMERGENCY OVERRIDE'), h('span', {}, 'No overrides available. They unlock only if a prisoner can no longer act.')));
+    const well = h('div', { class: 'bay' }, content, cover);
+    overridesEl.replaceChildren(header('EMERGENCY OVERRIDES', h('span', { class: 'bay-warn' }, 'AUTHORISED USE ONLY')), well);
+    bay = { well, content, cover, open: false };
+  }
+
+  function updateBay(controls) {
+    const n = syncSection('overrides', bay.content, controls, m => {
+      // A newly unlocked override is often the only way forward; never leave it below the fold.
+      m.el.classList.add('fresh');
+      m.el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    });
+    const open = n > 0;
+    if (open !== bay.open) {
+      bay.open = open;
+      setClass(bay.well, 'open', open);
+      if (open) audio.ui('lid');
+    }
   }
 
   function update() {
     if (!game) return;
+    updateInstruments();
     updatePower();
     const controls = game.controls();
-    syncSection('systems', systemsEl, controls);
-    for (const [id, r] of doorRows) {
-      const v = game.scenario.doorView(game.api, id);
-      paintRow(r, { ...v, action: v.canToggle ? v.action : '' });
-      if (r.btn) r.btn.hidden = !v.canToggle;
-    }
-    syncSection('doors', doorsEl, controls);
-    const n = syncSection('overrides', overridesEl, controls);
-    let empty = overridesEl.querySelector('.empty');
-    if (!n && !empty) overridesEl.append(h('div', { class: 'empty' }, 'None available. Overrides unlock only if a prisoner can no longer act.'));
-    if (n && empty) empty.remove();
+    syncSection('systems', systemsEl.lastChild, controls);
+    updateDoors(controls);
+    updateBay(controls);
     if (keypad && !keypadEl.hidden) updateKeypad();
   }
 
@@ -219,7 +396,7 @@ export function createConsole({ powerEl, systemsEl, doorsEl, overridesEl, keypad
     keypadEl.replaceChildren(
       h('h2', { id: 'keypadTitle' }, 'RESTRAINT RELEASE — A', h('button', { class: 'xbtn', type: 'button', onclick: closeKeypad }, 'CLOSE')),
       h('div', { class: 'warnline' }, 'Enter the four symbols in order. A wrong sequence punishes the prisoner. The third failure is final.'),
-      slots, attempts, keys, row, msg,
+      h('div', { class: 'kp-display' }, slots, attempts), keys, row, msg,
     );
     keypad = { id, slots, attempts, submit, r: { msg, msgText: '', msgOk: true, msgUntil: 0 }, sig: '' };
     keypadEl.hidden = false;
@@ -249,7 +426,10 @@ export function createConsole({ powerEl, systemsEl, doorsEl, overridesEl, keypad
       }
       if (v.open) keypad.submit.disabled = v.entry.length < v.codeLength;
     }
-    paintMsg(keypad.r);
+    const live = keypad.r.msgUntil && performance.now() < keypad.r.msgUntil;
+    setText(keypad.r.msg, live ? keypad.r.msgText : '');
+    setClass(keypad.r.msg, 'bad', live && !keypad.r.msgOk);
+    setClass(keypad.r.msg, 'good', live && keypad.r.msgOk);
   }
 
   return {

@@ -95,6 +95,8 @@ export function createAudio() {
   const SFX = {
     key: t => tone(1050, t, 0.04, 0.06),
     click: t => { tone(1200, t, 0.03, 0.05); noise(t, 0.02, 0.05, { freq: 3000 }); },
+    // Spring-loaded hinged cover snapping open (override bay).
+    lid: t => { noise(t, 0.05, 0.09, { freq: 1400, q: 2 }); metal(t + 0.04, 260, 0.05, 0.35); },
     switch: t => { noise(t, 0.02, 0.12, { type: 'highpass', freq: 2200 }); tone(130, t, 0.07, 0.14, { to: 60 }); },
     breaker: t => { tone(95, t, 0.14, 0.22, { to: 45 }); noise(t, 0.05, 0.16, { freq: 800, q: 2 }); },
     trip: t => {

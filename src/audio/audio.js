@@ -13,7 +13,8 @@ function loadSettings() {
 export function createAudio() {
   const settings = loadSettings();
   let ac = null, master, musicBus, sfxBus, noiseBuf, loops = null;
-  let groanAt = 0;
+  let groanAt = 0, emberAt = 0;
+  const mechanicalAt = new Map();
 
   function save() {
     try { localStorage.setItem(STORE, JSON.stringify(settings)); } catch { /* ignore */ }
@@ -97,8 +98,28 @@ export function createAudio() {
     click: t => { tone(1200, t, 0.03, 0.05); noise(t, 0.02, 0.05, { freq: 3000 }); },
     // Spring-loaded hinged cover snapping open (override bay).
     lid: t => { noise(t, 0.05, 0.09, { freq: 1400, q: 2 }); metal(t + 0.04, 260, 0.05, 0.35); },
+    cover: t => { noise(t, 0.035, 0.055, { freq: 1150, q: 2 }); metal(t + 0.035, 310, 0.025, 0.15); },
     switch: t => { noise(t, 0.02, 0.12, { type: 'highpass', freq: 2200 }); tone(130, t, 0.07, 0.14, { to: 60 }); },
+    rotary: t => { noise(t, 0.012, 0.065, { freq: 2600, q: 3 }); tone(330, t, 0.025, 0.035, { to: 180 }); },
     breaker: t => { tone(95, t, 0.14, 0.22, { to: 45 }); noise(t, 0.05, 0.16, { freq: 800, q: 2 }); },
+    'branch-pop': t => { noise(t, 0.018, 0.11, { type: 'highpass', freq: 1700 }); metal(t + 0.015, 190, 0.045, 0.2); },
+    'button-press': t => { tone(180, t, 0.045, 0.065, { to: 90 }); noise(t, 0.015, 0.035, { freq: 1100 }); },
+    'button-release': t => { noise(t, 0.018, 0.035, { freq: 1900, q: 2 }); tone(350, t, 0.035, 0.025, { to: 460 }); },
+    'e-stop': t => { tone(95, t, 0.12, 0.11, { to: 48 }); noise(t, 0.04, 0.06, { freq: 750 }); },
+    klaxon: t => {
+      // A short, rounded mechanical horn; the existing alarm loop owns any
+      // sustained emergency. The gain envelopes prevent a startling edge.
+      for (let i = 0; i < 3; i++) {
+        tone(175, t + i * 0.42, 0.29, 0.045, { type: 'sawtooth', to: 145, attack: 0.045 });
+        tone(220, t + i * 0.42, 0.29, 0.025, { type: 'triangle', to: 185, attack: 0.045 });
+      }
+    },
+    sparks: t => {
+      for (let i = 0; i < 6; i++) {
+        noise(t + i * 0.052, 0.018, 0.07 - i * 0.006, { type: 'highpass', freq: 3200 });
+        tone(920 + i * 170, t + i * 0.052, 0.022, 0.014, { type: 'sawtooth', to: 240 });
+      }
+    },
     trip: t => {
       noise(t, 0.45, 0.2, { freq: 3200, to: 300, q: 3 });
       tone(320, t, 0.9, 0.08, { type: 'sawtooth', to: 40 });
@@ -200,10 +221,13 @@ export function createAudio() {
     const water = loopNoise(sfxBus, 'bandpass', 520, 0.7);
     const gurgle = loopNoise(sfxBus, 'bandpass', 240, 3);
     const fan = loopNoise(sfxBus, 'lowpass', 850);
+    const fanMotor = loopOsc(sfxBus, 'triangle', 42, 240);
     const pump = loopOsc(sfxBus, 'sawtooth', 50, 260);
     const hum = loopOsc(sfxBus, 'sawtooth', 120, 400);
     const furnace = loopNoise(sfxBus, 'lowpass', 180);
-    loops = { droneA, droneB, room, pulse, pulseDepth, high, high2, alarm, water, gurgle, fan, pump, hum, furnace };
+    const steam = loopNoise(sfxBus, 'highpass', 1800, 0.6);
+    const embers = loopNoise(sfxBus, 'bandpass', 650, 0.7);
+    loops = { droneA, droneB, room, pulse, pulseDepth, high, high2, alarm, water, gurgle, fan, fanMotor, pump, hum, furnace, steam, embers };
   }
 
   function set(node, value, tc = 0.4) {
@@ -240,11 +264,35 @@ export function createAudio() {
     const flowing = f.phase === 'filling' || f.phase === 'draining';
     set(loops.water, flowing ? (f.intake === 'open' ? 0.12 : f.intake === 'leaking' ? 0.035 : 0) * near('B') : 0);
     set(loops.gurgle, f.phase === 'draining' && !f.stall ? 0.08 * near('B') : 0);
-    set(loops.fan, api.live('vent') ? 0.03 * near('C') : 0, 0.8);
+    const facility = st.facility;
+    const fanRoom = st.power.circuits.vent?.room || 'C';
+    const speed = facility?.fanSpeed || 'MED';
+    const fanPowered = api.live('vent');
+    const fanLevel = { OFF: 0, LOW: 0.018, MED: 0.032, HIGH: 0.047 }[speed] || 0;
+    const motorHz = { OFF: 30, LOW: 42, MED: 62, HIGH: 84 }[speed] || 30;
+    if (loops.fanSpeed !== speed) {
+      loops.fanSpeed = speed;
+      loops.fanMotor.o.frequency.setTargetAtTime(motorHz, t, 0.3);
+      loops.fan.f.frequency.setTargetAtTime(420 + motorHz * 8, t, 0.3);
+    }
+    set(loops.fan, fanPowered ? fanLevel * near(fanRoom) : 0, 0.5);
+    set(loops.fanMotor, fanPowered ? fanLevel * 0.28 * near(fanRoom) : 0, 0.5);
     set(loops.pump, api.live('pump') ? (f.phase === 'draining' ? 0.05 : 0.012) * near('B') : 0, 0.6);
     const roomLit = focus && game.scenario.lit(api, focus);
     set(loops.hum, roomLit ? 0.006 : 0, 0.3);
-    set(loops.furnace, api.live('incinerator') ? 0.02 * near('hall') : 0, 1);
+    const fire = api.live('incinerator');
+    const fireRoom = st.power.circuits.incinerator?.room || 'hall';
+    const steamRoom = facility?.steamHeat;
+    const steaming = fire && steamRoom && steamRoom !== 'OFF';
+    const smouldering = !fire && facility?.embers > 0;
+    set(loops.furnace, fire ? (steaming ? 0.055 : 0.035) * near(fireRoom) : 0, 0.8);
+    set(loops.steam, steaming ? 0.023 * near(steamRoom) : 0, 0.45);
+    const emberLevel = smouldering ? Math.min(1, facility.embers / 15) : 0;
+    set(loops.embers, emberLevel * 0.018 * near(fireRoom), 0.7);
+    if (smouldering && t >= emberAt) {
+      emberAt = t + 0.25 + Math.random() * 0.8;
+      noise(t, 0.012 + Math.random() * 0.025, 0.02 * emberLevel * near(fireRoom), { type: 'highpass', freq: 1600 + Math.random() * 1800 });
+    }
     if (t > groanAt) {
       groanAt = t + 22 + Math.random() * 25;
       if (groanAt > 30) {
@@ -257,11 +305,24 @@ export function createAudio() {
   function onEvents(events) {
     if (!ac || ac.state !== 'running') return;
     const t = ac.currentTime + 0.01;
-    let n = 0;
+    // Slice 1 retains legacy SFX alongside its richer notifications. Select
+    // one sound for each mechanism rather than playing both notifications.
+    const types = new Set(events.map(ev => ev.type));
+    const recently = name => t - (mechanicalAt.get(name) ?? -Infinity) < 0.15;
+    let n = 0, voices = 0;
+    if (types.has('branch-trip')) { SFX['branch-pop'](t); n++; }
+    if (types.has('sparks')) { SFX.sparks(t); n++; }
+    if (types.has('e-stop') || types.has('klaxon')) { SFX.klaxon(t); n++; }
     for (const ev of events) {
-      if (n > 6) break;
-      if (ev.type === 'sfx' && SFX[ev.name]) { SFX[ev.name](t); n++; }
-      else if (ev.type === 'line') { murmur(ev.speaker, ev.dur); n++; }
+      if (n >= 8) break;
+      if (ev.type === 'sfx' && SFX[ev.name]) {
+        if (ev.name === 'switch' && (recently('switch') || recently('rotary'))) continue;
+        if (ev.name === 'breaker' && (types.has('branch-trip') || recently('breaker'))) continue;
+        if (ev.name === 'alarm' && (types.has('e-stop') || types.has('klaxon'))) continue;
+        const sound = ev.name === 'switch' && (types.has('fan-speed') || types.has('steam-heat')) ? 'rotary' : ev.name;
+        SFX[sound](t); n++;
+      }
+      else if (ev.type === 'line' && voices < 2) { murmur(ev.speaker, ev.dur); voices++; n++; }
       else if (ev.type === 'interference' && ev.strength >= 0.8) { SFX.static(t); n++; }
     }
   }
@@ -271,7 +332,11 @@ export function createAudio() {
     unlock() { if (ensure() && ac.state === 'suspended') ac.resume().catch(() => {}); },
     suspend() { if (ac && ac.state === 'running') ac.suspend().catch(() => {}); },
     resume() { if (ac && ac.state === 'suspended') ac.resume().catch(() => {}); },
-    ui(name) { if (ac && ac.state === 'running' && SFX[name]) SFX[name](ac.currentTime + 0.005); },
+    ui(name) {
+      if (!ac || ac.state !== 'running' || !SFX[name]) return;
+      mechanicalAt.set(name, ac.currentTime);
+      SFX[name](ac.currentTime + 0.005);
+    },
     setMusic(v) { settings.music = v; applyVolumes(); save(); },
     setSfx(v) { settings.sfx = v; applyVolumes(); save(); },
     setMuted(m) { settings.muted = m; applyVolumes(); save(); },

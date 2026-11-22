@@ -1,9 +1,10 @@
 // Game core: fixed-step sim clock, scheduler, speech queue, log, notes,
 // command dispatch and the api scenarios are written against. Pure and headless.
-import { SIM_HZ, SPEECH, STRESS } from '../config.js';
+import { SIM_HZ, SPEECH, STRESS, REACTIONS } from '../config.js';
 import { createRng } from './rng.js';
 import * as Power from './power.js';
 import { createPrisoner, startTask, cancelTask, updatePrisoners, busy } from './prisoners.js';
+import { react, setReactionCue, shouldRefuse, refusalLine, reassureTrust, changeTrust } from './reactions.js';
 
 const STEP = 1 / SIM_HZ;
 const MAX_FRAME = 0.25;
@@ -24,6 +25,7 @@ export function createGame(scenario, { seed = 1 } = {}) {
     doors: {},
     lines: [],
     speechEnd: {},
+    scriptedUntil: 0,
     log: [],
     logSeq: 0,
     notes: {},
@@ -44,7 +46,9 @@ export function createGame(scenario, { seed = 1 } = {}) {
     get s() { return state.s; },
     get t() { return state.t; },
     prisoner: id => state.prisoners[id],
-    emit: ev => { state.events.push(ev); },
+    emit: ev => { state.events.push(ev); scenario.onEvent?.(api, ev); },
+    stimulus: stimulus => react(api, scenario, stimulus),
+    trust: (id, delta) => changeTrust(state.prisoners[id], delta),
     sfx: (name, room = null) => { state.events.push({ type: 'sfx', name, room }); },
     log(kind, text) {
       state.log.push({ id: ++state.logSeq, t: state.t, kind, text });
@@ -71,6 +75,7 @@ export function createGame(scenario, { seed = 1 } = {}) {
     },
     pa(text) {
       const line = api.say('pa', text);
+      state.scriptedUntil = Math.max(state.scriptedUntil, line.end);
       api.after(line.start - state.t, () => {
         api.sfx('pa');
         api.emit({ type: 'interference', room: '*', strength: 0.45 });
@@ -103,15 +108,45 @@ export function createGame(scenario, { seed = 1 } = {}) {
       d.open = open;
       api.sfx(open ? 'door-open' : 'door-close', id);
       api.emit({ type: 'door', id, open });
+      api.stimulus({ kind: 'door', room: scenario.rooms[id] ? id : 'hall', open, direction: open ? 1 : -1 });
     },
     alarm(on, reason = '', room = null) {
       if (state.alarm.on === on && state.alarm.reason === reason) return;
       state.alarm = { on, reason, room };
       api.emit({ type: 'alarm', on, reason, room });
     },
-    lose(id, cause) {
+    collapse(id, cause) {
+      const p = state.prisoners[id];
+      if (!p.alive || p.escaped || p.collapsed) return;
+      if (p.task) cancelTask(api, p, 'collapse');
+      p.collapsed = true;
+      p.collapseCause = cause;
+      p.hesitating = false;
+      p.fsm = 'collapsed';
+      p.anim = 'collapse';
+      setReactionCue(api, p, 'collapse', { room: p.loc });
+      state.lines = state.lines.filter(l => l.speaker !== id);
+      state.speechEnd[id] = state.t;
+      api.log('warn', `${p.name.toUpperCase()} HAS COLLAPSED — CLEAR THE HAZARD`);
+      api.emit({ type: 'collapse', pid: id, cause });
+    },
+    recover(id) {
+      const p = state.prisoners[id];
+      if (!p.alive || !p.collapsed) return;
+      p.collapsed = false;
+      p.collapseCause = null;
+      p.fsm = 'idle';
+      p.anim = 'stand';
+      p.anchor = p.x;
+      p.reaction = null;
+      api.say(id, scenario.recoveryLines?.[id] || 'I can move again. Tell me what you need.');
+      api.log('ok', `${p.name.toUpperCase()} IS RESPONSIVE AGAIN`);
+      api.emit({ type: 'recovered', pid: id });
+    },
+    lose(id, cause, environmental = false) {
       const p = state.prisoners[id];
       if (!p.alive) return;
+      if (p.immortal) { api.collapse(id, cause); return; }
       if (p.task) cancelTask(api, p, 'lost');
       p.alive = false;
       p.panicked = false;
@@ -121,7 +156,8 @@ export function createGame(scenario, { seed = 1 } = {}) {
       // Anything they had not said yet is never heard.
       state.lines = state.lines.filter(l => l.speaker !== id || l.start <= state.t);
       state.speechEnd[id] = state.t;
-      api.emit({ type: 'lost', pid: id });
+      api.emit({ type: 'lost', pid: id, cause, environmental });
+      api.stimulus({ kind: 'lost', room: p.loc, source: id, stress: STRESS.trip, harmful: true });
     },
     escape(id) {
       const p = state.prisoners[id];
@@ -189,6 +225,7 @@ export function createGame(scenario, { seed = 1 } = {}) {
     const p = state.prisoners[id];
     if (!p) return { ok: false, status: 'NO CHANNEL' };
     if (!p.alive) return { ok: false, status: 'NO RESPONSE' };
+    if (p.collapsed) return { ok: false, status: 'COLLAPSED — CLEAR THE HAZARD' };
     if (p.escaped) return { ok: false, status: 'OUT OF RANGE — ESCAPED' };
     return { ok: true, status: '' };
   }
@@ -236,12 +273,21 @@ export function createGame(scenario, { seed = 1 } = {}) {
     api.say('you', said, { to: id });
     p.listenUntil = state.t + 1.8;
     p.talkLock = state.t + SPEECH.replyDelay + 0.6;
+    const refused = shouldRefuse(p, opt);
     api.after(SPEECH.replyDelay, () => {
-      if (!p.alive || p.escaped) return;
+      if (!p.alive || p.escaped || p.collapsed) return;
       p.contacted = true;
-      opt.run(api, p);
+      if (refused) {
+        api.say(id, refusalLine(api, scenario, p), { kind: 'reaction' });
+        setReactionCue(api, p, 'cower');
+        api.emit({ type: 'refusal', pid: id, option: opt.id });
+      } else {
+        if (opt.calm) reassureTrust(p);
+        opt.run(api, p);
+      }
       const replyEnd = state.speechEnd[id] || state.t;
-      p.talkLock = Math.max(state.t + 0.4, Math.min(replyEnd, state.t + SPEECH.lockCap));
+      p.talkLock = refused ? state.t + REACTIONS.refusalDelay
+        : Math.max(state.t + 0.4, Math.min(replyEnd, state.t + SPEECH.lockCap));
     });
     return { ok: true, msg: '' };
   }

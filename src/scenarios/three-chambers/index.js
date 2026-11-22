@@ -2,7 +2,9 @@
 // into the shape the engine and presentation expect.
 import * as data from './data.js';
 import * as M from './mechanics.js';
-import { dialogue } from './dialogue.js';
+import { dialogue, reactions, recoveryLines } from './dialogue.js';
+import { discoveries } from './discoveries.js';
+import { commentary } from './commentary.js';
 
 export const threeChambers = {
   id: 'three-chambers',
@@ -18,6 +20,11 @@ export const threeChambers = {
   hotspots: data.hotspots,
   symbols: data.SYMBOLS,
   dialogue,
+  reactions,
+  recoveryLines,
+  discoveries,
+  commentary,
+  onEvent: M.onEvent,
   controls: M.controls,
   init: M.init,
   update: M.update,

@@ -1,5 +1,6 @@
 // Static data for "The Three Chambers": geometry, waypoints, circuits,
 // doors, prisoners, hotspots and the restraint codes. Pure data.
+import { POWER } from '../../config.js';
 
 // Every location is a 1-D walkable span in logical room space (see config).
 // Rooms connect to the hall only through their door.
@@ -13,7 +14,7 @@ export const rooms = {
 export const feeds = ['A', 'B', 'C', 'hall'];
 
 // Switchboard in Room C: isolator handles left to right, then the main breaker.
-export const BOARD = { order: ['lightsA', 'lightsBC', 'incinerator', 'pump', 'vent', 'exit'], x0: 58, dx: 28, main: 228 };
+export const BOARD = { order: ['lightsA', 'incinerator', 'pump', 'vent', 'exit'], x0: 58, dx: 28, main: 228 };
 const isoX = id => BOARD.x0 + BOARD.dx * BOARD.order.indexOf(id);
 
 // Where a prisoner stands to use something (they face the mechanism).
@@ -27,19 +28,36 @@ export const spots = {
 export const prisoners = [
   { id: 'A', name: 'Nadia', room: 'A', x: 172, facing: 1, stress: 88, baseline: 40, immobile: true, anim: 'seated' },
   { id: 'B', name: 'Theo', room: 'B', x: 214, facing: -1, stress: 50, baseline: 32, tether: [64, 300] },
-  { id: 'C', name: 'Ruth', room: 'C', x: 330, facing: -1, stress: 38, baseline: 26 },
+  { id: 'C', name: 'Ruth', room: 'C', x: 330, facing: -1, stress: 38, baseline: 26, immortal: true },
 ];
 
-export const capacity = 10;
+export const capacity = POWER.capacity;
 
 export const circuits = [
-  { id: 'lightsA', label: 'Lighting — Chamber A', short: 'LIGHTS A', amps: 2, isolated: true },
-  { id: 'lightsBC', label: 'Lighting — B / C / Hall', short: 'LIGHTS B·C·HALL', amps: 2, on: true },
-  { id: 'incinerator', label: 'Incinerator', short: 'INCINERATOR', amps: 4, on: true },
-  { id: 'pump', label: 'Drain pump — Chamber B', short: 'DRAIN PUMP', amps: 4, isolated: true },
-  { id: 'vent', label: 'Ventilation fan', short: 'VENT FAN', amps: 3 },
-  { id: 'exit', label: 'Exit door motor', short: 'EXIT MOTOR', amps: 5, isolated: true },
+  { id: 'lightsA', label: 'Lighting — Chamber A', short: 'LIGHTS A', amps: POWER.amps.lightsA, isolated: true, room: 'A' },
+  { id: 'lightsB', label: 'Lighting — Chamber B', short: 'LIGHTS B', amps: POWER.amps.lightsB, on: true, room: 'B' },
+  { id: 'lightsC', label: 'Lighting — Room C', short: 'LIGHTS C', amps: POWER.amps.lightsC, on: true, room: 'C' },
+  { id: 'lightsHall', label: 'Lighting — Hall', short: 'LIGHTS HALL', amps: POWER.amps.lightsHall, on: true, room: 'hall' },
+  { id: 'incinerator', label: 'Incinerator', short: 'INCINERATOR', amps: POWER.amps.incinerator, on: true, room: 'C' },
+  { id: 'pump', label: 'Drain pump — Chamber B', short: 'DRAIN PUMP', amps: POWER.amps.pump, isolated: true, room: 'B' },
+  { id: 'vent', label: 'Ventilation fan', short: 'VENT FAN', amps: POWER.fanAmps.MED, room: 'C' },
+  { id: 'exit', label: 'Exit door motor', short: 'EXIT MOTOR', amps: POWER.amps.exit, isolated: true, room: 'hall', requiresOff: ['pump', 'vent', 'incinerator'] },
 ];
+
+export const facility = {
+  rooms: ['A', 'B', 'C', 'hall'],
+  lights: { A: 'lightsA', B: 'lightsB', C: 'lightsC', hall: 'lightsHall' },
+  fanCircuit: 'vent', heatCircuit: 'incinerator', waterCircuit: 'lightsB',
+  waterRoom: 'B', smokeSourceRoom: 'C', smokeSpreadRoom: 'hall',
+  protectedPrisoners: ['C'],
+  waterLevel: state => state.s.flood.level,
+  damperOpen: state => state.s.flood.damper,
+  floodActive: state => ['filling', 'draining'].includes(state.s.flood.phase),
+  secrets: [
+    { id: 'warmWriting', room: 'A', kind: 'warm', title: 'Heat remembers', text: 'As the wall warms, old letters darken: THE BOILER FEEDS EVERY ROOM. SO DOES THE SMOKE.' },
+    { id: 'irWriting', room: 'B', kind: 'dark', title: 'Under another light', text: 'In infrared, a painted warning becomes legible: THE SWITCH IS NOT THE BREAKER. LEAVE THE WET LIGHT DARK.' },
+  ],
+};
 
 export const doors = [
   { id: 'A', label: 'CELL DOOR A' },

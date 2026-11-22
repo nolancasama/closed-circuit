@@ -73,7 +73,7 @@ export const chamberC = {
     grille(ctx, 300, 38, 24, 14, env.speaking.C ? 1 : 0);
     if (env.speaking.C) speaking(ctx, 324, 45, t);
 
-    const load = Object.values(power.circuits).reduce((a, c) => a + (c.on && !c.isolated ? c.amps : 0), 0);
+    const load = Object.values(power.circuits).reduce((a, c) => a + (c.on && !c.isolated && !c.branchTripped ? c.amps : 0), 0);
     gauge(ctx, 70, 74, 12, power.tripped ? 0 : Math.min(1.08, load / power.capacity) * (1 + Math.sin(t * 9) * 0.004), { zones: [[0, 0.8, '#2f6e3c'], [0.8, 1, '#8a2b22']] });
 
     const c = st.prisoners.C;
@@ -89,7 +89,7 @@ export const chamberC = {
       ctx.fillRect(x - 3, hy - 2, 6, 4);
       ctx.fillStyle = circ.isolated ? '#9a3326' : '#2a2e2b';
       ctx.fillRect(x - 5, hy - 1, 10, 2.2);
-      const live = !power.tripped && circ.on && !circ.isolated;
+      const live = env.live(id);
       lamp(ctx, x, 92, 2, live ? '#45d16e' : circ.on && !circ.isolated ? '#e8a23a' : '#c2a03a', live || (circ.on && !circ.isolated));
     });
     const mainOp = step?.k === 'op' && c.task.kind === 'main' ? Math.min(1, c.task.opT / step.dur) : null;

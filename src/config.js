@@ -49,6 +49,37 @@ export const SPEECH = {
 export const POWER = {
   capacity: 10,
   forceWindow: 3,      // seconds a "FORCE?" confirmation stays armed
+  amps: { lightsA: 2, lightsB: 0.75, lightsC: 0.75, lightsHall: 0.5, incinerator: 4, pump: 4, exit: 5 },
+  fanAmps: { OFF: 0, LOW: 2, MED: 3, HIGH: 4 },
+  fanFlow: { OFF: 0, LOW: 0.45, MED: 1, HIGH: 1.5 },
+};
+
+export const FACILITY = {
+  ambient: 22,
+  heat: { uneasy: 35, dangerous: 50, lethal: 70, rate: 1, drift: 0.003, cooling: 0.025, airflowCooling: 0.018, floodCooling: 0.09, waterTemperature: 12, lethalTime: 14, exposureRecovery: 2, cold: 18, warmMin: 19, warmMax: 34, warmthCalm: 1.5 },
+  smoke: { backdraftBelow: 0.7, emberBuild: 0.02, hotEmberBuild: 0.035, passiveClear: 0.003, passiveClearCold: 0.025, airflowClear: 0.07, spreadAbove: 0.35, spread: 0.006, cough: 0.25, dense: 0.75, retreat: 0.5, recoverBelow: 0.28, collapseTime: 22, exposureRecovery: 2, stress: 0.6, heatStress: 1.5 },
+  embersTime: 45,
+  hotEmbersTime: 90,
+  emberHeatTime: 30,
+  flueCutTime: 70,
+  flueResetBelow: 35,
+  flueCoolRate: 3,
+  fixturesLevel: 0.5,
+  waterContactLevel: 0.01,
+  shockStress: 28,
+  lethalShocks: 3,
+  stopStress: 18,
+  recoveryTime: 5,
+  secretWarm: 38,
+  darkWorkFactor: 0.6,
+  smokeWorkFactor: 0.6,
+  retreatCueTime: 4,
+};
+
+export const REACTIONS = {
+  initialTrust: 65, trustMin: 0, trustMax: 100, hurtTrust: 9, frightTrust: 3,
+  helpTrust: 4, reassureTrust: 14, lowTrust: 30, distress: 78, cooldown: 8,
+  habituatedAfter: 4, quietGap: 90, cueTime: 3, refusalDelay: 1.4,
 };
 
 export const FLOOD = {
@@ -92,4 +123,10 @@ export const HOLD = {
   start: 1.2,
   override: 2.0,
   leave: 2.5,
+};
+
+export const COMMENTARY = {
+  scriptedGap: 10,
+  cooldown: 90,       // global sim seconds between contextual Voice lines
+  interference: 0.45,
 };

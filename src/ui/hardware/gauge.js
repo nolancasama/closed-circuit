@@ -60,7 +60,7 @@ export function createGauge({ title, unit = '', min = 0, max = 100, major = 10, 
   el.className = 'gauge';
   el.append(cap, dial, readout);
 
-  let cur = null, last = performance.now(), dragOn = null, txt = '', tone = '';
+  let cur = null, velocity = 0, last = performance.now(), dragOn = null, txt = '', tone = '';
   return {
     el,
     // value: needle target; pointer: optional drag-pointer value (null hides it).
@@ -69,8 +69,17 @@ export function createGauge({ title, unit = '', min = 0, max = 100, major = 10, 
       const dt = Math.min(0.1, (now - last) / 1000);
       last = now;
       const target = ang(value);
-      if (cur == null || reduced()) cur = target;
-      else cur += (target - cur) * Math.min(1, dt * 7);
+      if (cur == null || reduced()) { cur = target; velocity = 0; }
+      else {
+        // A lightly underdamped needle gives a small mechanical overshoot.
+        // Substeps keep the spring stable after a slow browser frame.
+        const steps = Math.max(1, Math.ceil(dt / 0.016));
+        const step = dt / steps;
+        for (let i = 0; i < steps; i++) {
+          velocity += ((target - cur) * 170 - velocity * 21) * step;
+          cur += velocity * step;
+        }
+      }
       needle.setAttribute('transform', `rotate(${cur.toFixed(2)} ${CX} ${CY})`);
       const show = pointer != null;
       if (show !== dragOn) { drag.style.display = show ? '' : 'none'; dragOn = show; }

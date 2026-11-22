@@ -17,25 +17,35 @@
       <div class="clock" id="clock" aria-label="Facility clock">02:13:07</div>
       <div class="banner" id="banner" role="status" hidden></div>
       <nav class="top-actions" aria-label="View">
-        <button type="button" class="tbtn" id="btnBoard" title="Expand the control board (B)" aria-pressed="false">BOARD</button>
         <button type="button" class="tbtn" id="btnGrid" title="Toggle all feeds (G)">GRID</button>
         <button type="button" class="tbtn" id="btnNotes" title="Notes (N)">NOTES <span class="count" id="notesCount">0</span></button>
+        <button type="button" class="tbtn" id="btnDiscoveries" title="Discoveries (D)">DISCOVERIES <span class="count" id="discoveriesCount">0 / 12</span></button>
         <button type="button" class="tbtn" id="btnPause" title="Pause (Esc)" aria-label="Pause">II</button>
       </nav>
     </header>
 
-    <main class="desk" id="desk" data-mode="grid" data-tab="intercom">
+    <main class="desk" id="desk" data-mode="focus" data-tab="console">
       <section class="monitors" id="monitors" aria-label="Camera feeds">
         <div class="feed-main" id="feedMain">
+          <div class="crt-plate"><span id="mainPlate">CAM 01 · CHAMBER A</span><span class="crt-record"><i></i> REC</span></div>
+          <div class="crt-face">
           <div class="screen" id="mainScreen">
             <canvas id="mainCanvas" aria-label="Focused camera feed"></canvas>
+            <div class="main-mosaic" id="mainMosaic" aria-label="All four cameras">
+              <button type="button" data-camera="A" aria-label="Enlarge Chamber A"><canvas></canvas><span>A · NADIA</span></button>
+              <button type="button" data-camera="B" aria-label="Enlarge Chamber B"><canvas></canvas><span>B · THEO</span></button>
+              <button type="button" data-camera="C" aria-label="Enlarge Chamber C"><canvas></canvas><span>C · RUTH</span></button>
+              <button type="button" data-camera="hall" aria-label="Enlarge Hall"><canvas></canvas><span>HALL</span></button>
+            </div>
             <div class="inspect" id="inspect" hidden>
               <div class="inspect-title" id="inspectTitle"></div>
               <div class="inspect-text" id="inspectText"></div>
               <button type="button" class="ibtn" id="inspectClose">ZOOM OUT</button>
             </div>
-            <button type="button" class="feed-grid-btn" id="btnAll" title="All feeds (G)">ALL FEEDS</button>
           </div>
+          </div>
+          <div class="observation-slot"><div class="discovery-stamp" id="discoveryStamp" role="status" hidden></div></div>
+          <div class="crt-status"><span id="mainStatus"></span><button type="button" class="feed-grid-btn" id="btnAll" title="All feeds (G)">GRID · G</button></div>
         </div>
         <div class="feed-grid" id="feedGrid">
           <button type="button" class="tile" data-feed="A"><span class="screen"><canvas></canvas><span class="tile-chip"></span></span></button>
@@ -47,13 +57,14 @@
       </section>
 
       <nav class="tabs" aria-label="Panels">
+        <button type="button" data-tab="console" class="tab">DESK</button>
         <button type="button" data-tab="intercom" class="tab">INTERCOM</button>
-        <button type="button" data-tab="console" class="tab">CONSOLE</button>
         <button type="button" data-tab="log" class="tab">LOG</button>
       </nav>
 
       <section class="comms" aria-label="Intercom and log">
         <div class="intercom" id="intercom">
+          <div class="comms-hardware"><span>FACILITY INTERCOM / 3 CH</span><div class="speaker-grille" aria-hidden="true"></div></div>
           <div class="channels" id="channels" role="tablist" aria-label="Intercom channel"></div>
           <div class="channel-status" id="channelStatus"></div>
           <div class="options" id="options"></div>
@@ -62,8 +73,8 @@
       </section>
 
       <aside class="console" id="console" aria-label="Facility console">
-        <section class="panel instruments" id="instrumentsPanel" aria-label="Instruments"></section>
         <section class="panel power" id="powerPanel" aria-label="Power distribution"></section>
+        <section class="panel instruments" id="instrumentsPanel" aria-label="Environment"></section>
         <section class="panel systems" id="systemsPanel" aria-label="Chamber systems"></section>
         <section class="panel doors" id="doorsPanel" aria-label="Door control"></section>
         <section class="panel overrides" id="overridesPanel" aria-label="Emergency overrides"></section>
@@ -72,6 +83,7 @@
 
     <div class="drawer" id="keypad" role="dialog" aria-modal="false" aria-labelledby="keypadTitle" hidden></div>
     <div class="drawer" id="notes" role="dialog" aria-modal="false" aria-labelledby="notesTitle" hidden></div>
+    <div class="drawer clipboard" id="discoveries" role="dialog" aria-modal="false" aria-labelledby="discoveriesTitle" hidden></div>
 
     <div class="overlay" id="titleScreen">
       <canvas class="overlay-noise" id="titleNoise" aria-hidden="true"></canvas>
@@ -82,7 +94,7 @@
         <ul class="howto">
           <li><b>Watch.</b> Tap a feed to enlarge it. Tap bracketed objects to zoom in and read them.</li>
           <li><b>Talk.</b> Pick a prisoner's channel and choose what to say. They act on what you tell them.</li>
-          <li><b>Run the facility.</b> Power, doors and chamber systems are on the control board. Read before you press. <b>B</b> opens the full board.</li>
+          <li><b>Run the facility.</b> Power, heat, ventilation and chamber systems are on the desk. Watch what changes. Record what you discover.</li>
         </ul>
         <button type="button" class="big-btn" id="btnBegin">BEGIN SHIFT</button>
         <div class="title-foot">Headphones recommended · Esc pauses</div>
@@ -102,7 +114,7 @@
           <button type="button" class="big-btn ghost" id="btnRestart">RESTART SHIFT</button>
         </div>
         <ul class="howto small">
-          <li>Keys: <b>1–4</b> feeds · <b>G</b> all feeds · <b>B</b> expand the control board · <b>N</b> notes · <b>Esc</b> pause.</li>
+          <li>Keys: <b>1–4</b> feeds · <b>G</b> all feeds · <b>N</b> notes · <b>D</b> discoveries · <b>Esc</b> pause.</li>
           <li>Panicking prisoners only respond to calming words.</li>
           <li>Major actions sit under a safety guard: lift the guard, then hold the button until its ring fills.</li>
         </ul>

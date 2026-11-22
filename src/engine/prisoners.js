@@ -9,7 +9,8 @@
 //   { k: 'wait', dur }
 //   { k: 'call', fn }
 // check/during return null or { line, log } to abort with an explanation.
-import { MOVE, STRESS } from '../config.js';
+import { MOVE, STRESS, REACTIONS } from '../config.js';
+import { createReactionState } from './reactions.js';
 
 export function createPrisoner(def) {
   return {
@@ -20,11 +21,18 @@ export function createPrisoner(def) {
     x: def.x,
     facing: def.facing || 1,
     alive: true,
+    immortal: !!def.immortal,
+    collapsed: false,
+    collapseCause: null,
     escaped: false,
     lostCause: null,
     stress: def.stress,
     baseline: def.baseline,
     panicked: def.stress >= STRESS.panic,
+    trust: def.trust ?? REACTIONS.initialTrust,
+    reactions: createReactionState(),
+    reaction: null,
+    reassuredForTask: false,
     immobile: !!def.immobile,
     tether: def.tether ? [...def.tether] : null,
     task: null,
@@ -51,7 +59,7 @@ export function createPrisoner(def) {
 export const busy = p => !!p.task && p.task.steps[p.task.i]?.k !== 'hold';
 
 export function startTask(api, p, task) {
-  if (!p.alive || p.escaped) return false;
+  if (!p.alive || p.escaped || p.collapsed) return false;
   if (p.task) cancelTask(api, p, 'replaced');
   p.task = { ...task, i: 0, stepT: 0, opT: 0, opStarted: false };
   p.blocked = false;
@@ -257,6 +265,7 @@ function updateMicro(api, scenario, p, dt) {
 function fsmOf(api, p) {
   if (!p.alive) return 'incapacitated';
   if (p.escaped) return 'escaped';
+  if (p.collapsed) return 'collapsed';
   if (p.task) {
     const step = p.task.steps[p.task.i];
     if (p.task.kind === 'escape') return p.blocked ? 'waiting' : 'escaping';
@@ -274,10 +283,14 @@ export function updatePrisoners(api, scenario, dt) {
     const p = api.state.prisoners[id];
     p.animT += dt;
     if (p.flash > 0) p.flash = Math.max(0, p.flash - dt);
+    if (p.reaction && p.reaction.until <= api.t && !p.collapsed) p.reaction = null;
     if (!p.alive || p.escaped) { p.fsm = fsmOf(api, p); continue; }
     updateStress(api, scenario, p, dt);
-    if (p.task) runTask(api, scenario, p, dt);
-    if (p.alive && !p.escaped) updateMicro(api, scenario, p, dt);
+    if (p.task && !p.collapsed) {
+      const factor = scenario.environment(api, p).taskSpeed ?? 1;
+      runTask(api, scenario, p, dt * factor);
+    }
+    if (p.alive && !p.escaped && !p.collapsed) updateMicro(api, scenario, p, dt);
     const fsm = fsmOf(api, p);
     if (fsm !== p.fsm) { p.fsm = fsm; api.emit({ type: 'fsm', pid: p.id, fsm }); }
   }

@@ -89,12 +89,14 @@ export const hall = {
       text(ctx, 'EXIT', 442, 45.5, { size: 11, color: s.exit.released ? '#7a2b22' : '#4a2420', align: 'center' });
     }
 
-    if (env.incinerator) {
+    if (env.incinerator || st.facility.embers > 0) {
+      const live = env.incinerator;
+      const ember = live ? 1 : Math.min(1, st.facility.embers / 20) * 0.4;
       ctx.save();
-      ctx.strokeStyle = `rgba(255,140,40,${0.55 + Math.sin(t * 7) * 0.2})`;
+      ctx.strokeStyle = `rgba(255,${live ? 140 : 75},40,${(0.55 + Math.sin(t * 7) * 0.2) * ember})`;
       ctx.lineWidth = 1.2;
       ctx.strokeRect(366, 138, 32, 32);
-      ctx.strokeStyle = 'rgba(255,200,140,0.12)';
+      ctx.strokeStyle = `rgba(255,200,140,${0.12 * ember})`;
       ctx.lineWidth = 0.8;
       for (let i = 0; i < 4; i++) {
         ctx.beginPath();
@@ -126,9 +128,10 @@ export const hall = {
       sources.push({ x: 442, y: 140, r: 260, i: open });
       glows.push({ x: 442, y: 140, r: 160, color: 'rgba(255,250,225,0.5)', a: open });
     }
-    if (env.incinerator) {
-      sources.push({ x: 382, y: 154, r: 70, i: 0.4 });
-      glows.push({ x: 382, y: 154, r: 46, color: 'rgba(255,120,30,0.45)', a: 0.7 + Math.sin(t * 7) * 0.2 });
+    if (env.incinerator || env.st.facility.embers > 0) {
+      const ember = env.incinerator ? 1 : Math.min(1, env.st.facility.embers / 20) * 0.3;
+      sources.push({ x: 382, y: 154, r: 70, i: 0.4 * ember });
+      glows.push({ x: 382, y: 154, r: 46, color: 'rgba(255,120,30,0.45)', a: (0.7 + Math.sin(t * 7) * 0.2) * ember });
     }
     for (const [id, x] of Object.entries(CELLS)) {
       const d = env.fx.door[id];

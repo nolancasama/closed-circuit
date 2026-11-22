@@ -5,13 +5,17 @@ import { actionButton } from '../hold.js';
 
 // Round pushbutton. colour: red | amber | black | green.
 // hold: { isHold(), seconds() } makes it hold-to-confirm while isHold() is true.
-export function createPushbutton({ label, color = 'black', size = 'md', hold = null, onFire, caption = '' }) {
+export function createPushbutton({ label, color = 'black', size = 'md', hold = null, onFire, caption = '', onMechanical }) {
   const cap = h('span', { class: 'pb-cap', 'aria-hidden': 'true' }, h('span', { class: 'pb-txt' }, caption));
   const btn = h('button', { class: `pb pb-${color} pb-${size}`, type: 'button', 'aria-label': label }, h('span', { class: 'pb-ring', 'aria-hidden': 'true' }), cap);
   // Brief "pressed" pose even for quick clicks, so the spring travel reads.
-  const press = () => { btn.classList.remove('pressed'); void btn.offsetWidth; btn.classList.add('pressed'); };
+  const press = () => { btn.classList.remove('pressed'); void btn.offsetWidth; btn.classList.add('pressed'); onMechanical?.('button-press'); };
+  const release = () => onMechanical?.('button-release');
   btn.addEventListener('pointerdown', press);
   btn.addEventListener('keydown', e => { if (e.key === ' ' || e.key === 'Enter') press(); });
+  btn.addEventListener('pointerup', release);
+  btn.addEventListener('pointercancel', release);
+  btn.addEventListener('keyup', e => { if (e.key === ' ' || e.key === 'Enter') release(); });
   if (hold) actionButton(btn, { isHold: hold.isHold, seconds: hold.seconds, onFire });
   else btn.addEventListener('click', () => onFire());
   let prevCap = caption, prevReady = null;
@@ -33,17 +37,20 @@ export function createGuard({ label, inner, idle = 6, onOpen }) {
   const lid = h('button', { class: 'guard-lid', type: 'button', 'aria-expanded': 'false', 'aria-label': `Lift guard: ${label}` },
     h('span', { class: 'guard-legend' }, 'LIFT GUARD'));
   const el = h('div', { class: 'guard' }, h('div', { class: 'guard-seat' }, inner.el), lid);
-  let open = false, timer = 0;
+  let open = null, timer = 0;
   const arm = () => { clearTimeout(timer); timer = setTimeout(() => { if (!inner.el.classList.contains('holding')) setOpen(false); else arm(); }, idle * 1000); };
   function setOpen(v) {
     if (open === v) return;
+    const restoreFocus = !v && inner.el.contains(document.activeElement);
     open = v;
     setClass(el, 'open', v);
     lid.setAttribute('aria-expanded', v ? 'true' : 'false');
     setText(lid.firstChild, v ? '' : 'LIFT GUARD');
     inner.btn.tabIndex = v ? 0 : -1;
+    inner.btn.disabled = !v;
     inner.btn.setAttribute('aria-hidden', v ? 'false' : 'true');
     if (v) { arm(); onOpen?.(); } else clearTimeout(timer);
+    if (restoreFocus) lid.focus({ preventScroll: true });
   }
   lid.addEventListener('click', () => {
     if (open) { setOpen(false); return; }

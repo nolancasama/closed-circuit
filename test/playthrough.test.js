@@ -154,7 +154,7 @@ test('overload: force trips the main; resetting under load trips again; reset ho
   r = power(g, 'vent', true);
   assert.equal(r.code, 'tripped');
   assert.equal(g.state.power.tripped, true);
-  assert.equal(g.api.live('lightsBC'), false);
+  for (const id of ['lightsB', 'lightsC', 'lightsHall']) assert.equal(g.api.live(id), false);
   say(g, 'C', 'c-main');
   idle(g, 'C');
   assert.equal(g.state.power.tripped, true, 'still overloaded');

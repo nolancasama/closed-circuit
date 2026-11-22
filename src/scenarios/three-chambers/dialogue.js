@@ -493,3 +493,135 @@ const ruth = [
 ];
 
 export const dialogue = { A: nadia, B: theo, C: ruth };
+
+// Stimulus pools are data, independent of the intercom command trees. Habituation
+// changes what they say without removing useful physical warning cues.
+const pool = (first, repeated, habituated) => ({ first, repeated, habituated });
+
+export const reactions = {
+  A: {
+    light: pool(
+      ['The light! Was that you?', 'Please warn me before you change the lights.', 'What happened to the light? I cannot see you.'],
+      ['I cannot even cover my eyes in this chair.', 'Stop playing with the switch. Please.', 'My eyes cannot keep up with you.'],
+      ['Again. I heard the switch.', 'I am keeping my eyes closed this time.', 'I will wait for my eyes to adjust.']),
+    machine: pool(
+      ['What is that machinery for?', 'Something started behind the wall. Can you hear it?', 'There is a motor running somewhere.'],
+      ['That sound changed again. Is it helping?', 'Theo? Ruth? Did you hear that too?', 'Tell me what that noise means.'],
+      ['I know that motor now.', 'The machines again. I am listening for your voice.', 'Another motor. I can hear it.']),
+    door: pool(
+      ['A door moved. Is somebody coming?', 'Was that my lock?', 'I heard a latch. Can you reach me?'],
+      ['Please leave me a way out.', 'I heard the door again. What are you doing?', 'Which door was that? Tell me.'],
+      ['Another door. Still here.', 'I am listening for footsteps after it.', 'I heard it. Please remember my room.']),
+    klaxon: pool(
+      [{ text: 'Turn it off! I cannot get away from it!', cue: 'cower' }, 'Ruth! What does that alarm mean?', 'That alarm is right over my head!'],
+      ['Please stop the alarm. I can barely hear you.', 'You keep doing that. You know we are in here.', 'Tell us why it keeps sounding!'],
+      ['The alarm again. Breathe. Just breathe.', 'I know. Something is wrong again.', 'I am waiting for the noise to stop.']),
+    heat: pool(
+      ['It is getting hot against the straps. Is that supposed to happen?', 'My skin is burning where the metal touches. Stop the heat.', 'The air is too hot. Can you cool this room?'],
+      ['I cannot move out of it! Please turn it down!', 'Theo, if your room gets hot, get away from the pipes.', 'The straps are getting hotter again.'],
+      ['I am still strapped in. I still cannot get away.', 'Please. Watch the temperature, not just the switches.', 'Still too hot. I need you to act.']),
+    'heat:shiver': ['It is cold in here. I cannot even rub my arms.', 'My hands are freezing under these straps.', 'I am shaking. Please warm the room.'],
+    'heat:comfortable': ['The air feels easier now. Thank you.', 'That is better. Please keep it like this.', 'I can breathe more easily at this temperature.'],
+    smoke: pool(
+      ['I can smell something burning.', 'Ruth? Is that smoke coming from your room?', 'There is smoke in the air.'],
+      ['The smell is back. Please check on Ruth.', 'Do not leave that burning. We share these walls.', 'My throat is stinging again.'],
+      ['Smoke again. I am trying to breathe slowly.', 'I can still smell it.', 'I am keeping my head down. Clear the air.']),
+    shock: pool(
+      ['Ah! Please, no more electricity!', 'That hurt! I felt it through the chair!'],
+      ['Stop! You know what that does now!', 'I cannot take another one. Please listen.'],
+      ['No. Not again. Please.', 'I am still here. Stop hurting me.']),
+    sparks: pool(
+      ['Something is sparking!', 'Those wires are live. Please switch them off.'],
+      ['Again! Get the power off before it hurts someone!', 'Do you hear that crackling? Stop it!'],
+      ['The sparks again. You have to stop this.', 'That is not a safe sound.']),
+    lost: pool(
+      ['Why did they go quiet? Please answer me!', 'No. Tell me they got out. Tell me something.'],
+      ['Not someone else. Please, not again.', 'I can hear the silence. Do not pretend it is alright.'],
+      ['Is anyone still listening?', 'Please get whoever is left out of here.']),
+    refusal: ['Wait. I am shaking too much. Ask me again in a moment.', 'You hurt us with that board. Tell me you are sure.', 'Give me a breath. Then tell me again.'],
+  },
+  B: {
+    light: pool(
+      ['Hey! My eyes were just getting used to that.', 'The lights changed. You can control those?', 'Was that you on the lights? Give me a warning.'],
+      ['Could you pick a setting? I am trying to see the floor.', 'I do not find the light show reassuring.', 'It takes me a moment to see the chain again.'],
+      ['Lights again. Still chained down here.', 'Yes, I noticed. I always notice.', 'Another switch. Same room.']),
+    machine: pool(
+      ['That motor is very close to my feet.', 'What did you just switch? Something moved in the pipe.', 'The floor is vibrating. Which machine is that?'],
+      ['The pipe sounds different. Is that good?', 'Ruth, tell them if that noise is bad, alright?', 'Something changed in the motor again.'],
+      ['I know that hum now. Unfortunately.', 'More machinery. Still hoping it is the helpful kind.', 'Heard it. Watching the pipe.']),
+    door: pool(
+      ['A door! Tell me that is an exit.', 'I heard a lock move. Can mine open?', 'Someone moved a door. Is the route open?'],
+      [{ text: 'I am still in here! Do not lock me in!', cue: 'pound door' }, 'Please keep the way out clear.', 'Which door moved this time?'],
+      ['Door again. I am waiting for my turn.', 'I heard it. I am ready when you are.', 'Another latch. Still waiting here.']),
+    klaxon: pool(
+      ['Oh, that is never a good noise!', 'Nadia! Ruth! Are you both alright?', 'What failed? Tell us what is happening!'],
+      ['Stop pressing whatever makes that happen!', 'I cannot hear the pipe over that alarm!', 'Another alarm? Check before you switch!'],
+      ['That alarm again. Of course.', 'I know, I know. Emergency. We are still here.', 'Waiting for the alarm to finish. Again.']),
+    heat: pool(
+      ['The pipes are getting hot. Is that deliberate?', 'My room is changing temperature. Watch that gauge, please.', 'That pipe is heating the whole room.'],
+      ['I cannot get away from this chain! Turn it down!', 'Nadia, shout if it gets hot in there. Do not wait.', 'The heat is coming back. Please deal with it.'],
+      ['Temperature again. Check mine before you leave it.', 'Still chained to the floor, remember?', 'Still watching those hot pipes.']),
+    'heat:shiver': ['This water is freezing. I cannot stop shaking.', 'My teeth are chattering. Please hurry with the drain.', 'I cannot get warm standing in this.'],
+    'heat:comfortable': ['Oh. That feels better. I can feel my feet again.', 'That is a better temperature. Thanks for watching it.', 'The pipes feel safe again. Thank you.'],
+    smoke: pool(
+      ['Is something on fire? Ruth?', 'That burning smell is coming through the vent.', 'Something is smoking on the other side of that wall.'],
+      ['The smoke is back. Get some air moving!', 'Ruth, stay low! Can you hear me?', 'My throat is sore again. Clear that smoke!'],
+      ['Still smells wrong in here.', 'Smoke again. Please sort the fan out.', 'Keeping low until the air clears.']),
+    shock: pool(
+      ['Aah! The water is live! Kill the lights!', 'My leg! Something shocked me through the water!'],
+      ['NO! You just did it again! Switch it OFF!', 'Another one will finish me. Please stop resetting that thing!'],
+      ['Stop. Please. No more.', 'The water is still live! Leave that switch alone!']),
+    sparks: pool(
+      ['Those lights are spitting sparks above the water!', 'That fixture is crackling. Electricity and water, remember?'],
+      ['It is sparking again! Do not reset it!', 'You saw what happened. Leave LIGHTS B off!'],
+      ['Still sparking. Still standing in water.', 'Do not try that switch again.']),
+    lost: pool(
+      ['Hello? Say something! Somebody answer!', 'No, no. They were just talking. What happened?'],
+      ['Not again. Get the rest of us out.', 'I heard that. Do not tell me everything is fine.'],
+      ['Who is left? Please answer me.', 'Just get us out. Whoever is left.']),
+    refusal: ['Hold on. I need a second before I try that.', 'After what you just did? Ask me again when you mean it.', 'I am shaking. Give me a breath, then say it again.'],
+  },
+  C: {
+    light: pool(
+      ['Give my eyes a moment. I need to see this board.', 'Lights changed. Watch what you switch while I am working.', 'Light switch. Hold on while my eyes adjust.'],
+      ['I work slower in the dark. Your choice.', 'Enough with the lights. There are exposed terminals here.', 'Keep the light steady while I read these labels.'],
+      ['Another light change. I have the board memorised by now.', 'Yes, I noticed. Mind the meter.', 'Heard the switch. Still working.']),
+    machine: pool(
+      ['Hear the load change? That is your machinery.', 'A motor changed speed. Keep an eye on the amps.', 'That motor changes your power draw. Watch the meter.'],
+      ['That is another load change. Plan the next one.', 'Give a motor time to settle before you switch it again.', 'Another motor change. Check your available capacity.'],
+      ['Same old motor note.', 'I hear it. Watching the board.', 'Motor heard. Mind the load.']),
+    door: pool(
+      ['Door mechanism. Keep the route clear.', 'That latch moved. Who is going through?', 'Door motor. Make sure the passage is clear.'],
+      ['Mind the doors. Someone may be moving.', 'Do not close one on a person. These motors will not care.', 'Another door cycle. Check the cameras.'],
+      ['Door cycled. Heard it.', 'Another latch. Keep track of who is where.', 'Latch heard. Watch the route.']),
+    klaxon: pool(
+      ['Emergency stop? Tell me what failed.', 'Everyone stay clear of moving machinery!', 'Stop signal. Check the board before resetting.'],
+      ['That stop is for emergencies. What is the fault?', 'You are frightening them. Read the board before you touch it.', 'Another stop? Find the cause first.'],
+      ['Another stop. Start again, one circuit at a time.', 'Alarm heard. Now tell me what you need.', 'Heard it. Keep the circuits isolated until you know.']),
+    heat: pool(
+      ['Boiler heat. Watch the room gauges, not the selector.', 'That pipe is too hot. Reduce the steam.', 'Steam is heating this room. Check the gauge.'],
+      [{ text: 'I am backing away from the pipe. Cut the heat.', cue: 'back away' }, 'Nadia cannot move away from that chair. Check her temperature.', 'Heat is rising again. Reduce it before someone gets hurt.'],
+      ['Heat again. Do not leave it unattended.', 'You know the boiler runs hot. Act on it.', 'Still too hot by the board. Turn it down.']),
+    'heat:shiver': ['Cold fingers and small switches. Give me time.', 'Temperature is dropping. Keep an eye on the others.', 'My hands are cold. This will take longer.'],
+    'heat:comfortable': ['Temperature is back in range. Keep it there.', 'That is better. I can concentrate on the board.', 'Room temperature is safe again. Carry on.'],
+    smoke: pool(
+      [{ text: 'Flue is backing up. Run the extractor fan.', cue: 'cough' }, 'Smoke in the switch room. I need airflow.', 'Embers are smoking. Start the room extractor.'],
+      [{ text: 'I cannot work in this. Clear the smoke first.', cue: 'back away' }, 'The boiler keeps smouldering with the power off. Run the fan.', 'Smoke is building again. Get the extractor running.'],
+      ['Still smoke. Run the fan. You know the drill.', 'I need clean air before I touch that board again.', 'Keeping low. Clear the air before we continue.']),
+    shock: pool(
+      ['Live fault! Get that circuit off!', 'Keep clear of the metal! There is a fault here!'],
+      ['Do not reset a breaker into the same fault!', 'It will keep doing that until you remove the cause.'],
+      ['Same fault. Same answer. Isolate it.', 'Leave the branch off until it is safe.']),
+    sparks: pool(
+      ['Sparks. Branch fault. Leave that breaker out.', 'Theo, keep clear of the fittings! Operator, cut LIGHTS B.'],
+      ['Resetting does not repair a short!', 'Stop feeding that fault. You will hurt someone.'],
+      ['Still faulted. Leave it off.', 'The breaker is doing its job. Let it.']),
+    lost: pool(
+      ['Nadia? Theo? Answer me. ...Damn it.', 'We lost someone. Keep your head. The others still need you.'],
+      ['Another one. Do not waste the time we have left.', 'Listen to me. Get the survivor out.'],
+      ['Keep working. Whoever is left.', 'Do not abandon the people you can still reach.']),
+    refusal: ['Not until you think about it. Take a breath and ask again.', 'You are rattling me. Give me a second, then repeat it.', 'I need my hands steady. One moment.'],
+  },
+};
+
+export const recoveryLines = { C: 'Air is better. I can stand. Tell me what needs doing again.' };

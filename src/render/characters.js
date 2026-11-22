@@ -1,5 +1,5 @@
 // Prisoners drawn as simple jointed figures. Origin is the feet; units are room units.
-import { FLOOD } from '../config.js';
+import { FLOOD, FACILITY } from '../config.js';
 import { glow } from './util.js';
 
 const LOOKS = {
@@ -122,7 +122,7 @@ function swim(t) {
 }
 
 // Work out what a prisoner is doing visually from sim state.
-export function poseOf(p, s, t) {
+function basePose(p, s, t) {
   const seed = p.id.charCodeAt(0);
   const m = p.micro?.kind;
   const step = p.task?.steps[p.task.i];
@@ -159,6 +159,85 @@ export function poseOf(p, s, t) {
   if (m === 'shake') pose.shake = 0.5;
   if (p.fsm === 'listening') pose.head.tilt = -0.28;
   if (p.stress > 60) pose.shake = Math.max(pose.shake, (p.stress - 60) / 80);
+  return pose;
+}
+
+// Reaction cues decorate the current task pose; they never alter its progress.
+// Persistent collapse takes precedence over the short-lived reaction cue.
+export function poseOf(p, s, t, { simT = t, deathAge = Infinity, temperature = FACILITY.ambient } = {}) {
+  if (!p.alive || p.collapsed) {
+    const restrained = p.immobile || (p.id === 'A' && !s.restraint.released);
+    const pose = restrained ? seated(t, p.id.charCodeAt(0), 'slumped') : stand(0, 0);
+    const convulsing = !p.alive && deathAge < 1.6 && p.lostCause !== 'flood';
+    pose.bob = 0;
+    pose.shake = convulsing ? Math.max(0, 1 - deathAge / 1.6) * 1.7 : 0;
+    if (!restrained) {
+      pose.roll = 1.34;
+      pose.lean = 0.35;
+      pose.head.tilt = 0.7;
+      pose.legs = [{ a: 0.4, k: -0.8 }, { a: -0.12, k: -0.3 }];
+      pose.arms = [{ a: 0.45, e: 0.65 }, { a: 0.2, e: 0.4 }];
+    }
+    if (convulsing) pose.lean += Math.sin(t * 29) * 0.13;
+    return pose;
+  }
+  let pose = basePose(p, s, t);
+  if (temperature < FACILITY.heat.cold) {
+    pose.shake = Math.max(pose.shake, 0.35);
+    if (!p.task) pose.arms = [{ a: 0.85, e: 2.2 }, { a: 0.8, e: 2.25 }];
+  }
+  const cue = p.reaction?.until > simT ? p.reaction.kind : null;
+  const pulse = Math.sin(t * 11);
+  switch (cue) {
+    case 'look':
+      pose.head.back = p.reaction.direction ? Math.sign(p.reaction.direction) !== Math.sign(p.facing) : true;
+      pose.head.tilt = -0.22;
+      break;
+    case 'flinch':
+      pose.lean = -0.22;
+      pose.shake = 0.9;
+      pose.arms = [{ a: 1.9, e: 1.65 }, { a: 1.65, e: 1.7 }];
+      pose.head.tilt = 0.3;
+      break;
+    case 'shield eyes':
+      pose.arms[0] = { a: 2.5, e: 1.25 };
+      pose.head.tilt = 0.3;
+      break;
+    case 'back away':
+      pose.lean = -0.28;
+      pose.head.tilt = -0.12;
+      pose.arms = [{ a: 1.2, e: 0.65 }, { a: 0.85, e: 0.9 }];
+      if (!pose.seated) pose.legs = [{ a: 0.3, k: -0.25 }, { a: -0.3, k: 0 }];
+      break;
+    case 'cough':
+      pose.lean = 0.28 + Math.max(0, pulse) * 0.12;
+      pose.head.tilt = 0.35;
+      pose.arms[0] = { a: 2.6, e: 1.9 };
+      pose.shake = Math.max(0, pulse) * 0.3;
+      break;
+    case 'wipe sweat':
+      pose.arms[0] = { a: 2.65 + Math.sin(t * 3.5) * 0.12, e: 1.3 };
+      pose.head.tilt = 0.23;
+      break;
+    case 'shiver':
+      pose.shake = 0.7;
+      pose.arms = [{ a: 0.85, e: 2.2 }, { a: 0.8, e: 2.25 }];
+      pose.head.tilt = 0.25;
+      break;
+    case 'pound door':
+      pose.arms = [{ a: 1.65 + pulse * 0.4, e: 0.25 + pulse * 0.2 }, { a: 1.6, e: 0.35 }];
+      pose.lean = 0.14 + Math.max(0, pulse) * 0.1;
+      break;
+    case 'cower':
+      if (pose.seated) { pose.lean = 0.35; pose.head.tilt = 0.7; pose.shake = 0.4; }
+      else pose = cower(t);
+      break;
+    case 'collapse':
+      // The authoritative collapsed flag supplies the lasting prone pose.
+      pose.lean = 0.65;
+      pose.head.tilt = 0.75;
+      break;
+  }
   return pose;
 }
 
@@ -213,9 +292,9 @@ function hair(ctx, look, hx, hy, r, face) {
 }
 
 // Draw a prisoner. env: { underwater: y of water surface or null }
-export function drawPrisoner(ctx, p, s, t, x, feetY) {
+export function drawPrisoner(ctx, p, s, t, x, feetY, environment = {}) {
   const look = LOOKS[p.id];
-  const pose = poseOf(p, s, t);
+  const pose = poseOf(p, s, t, environment);
   const sc = look.scale;
   const f = p.facing >= 0 ? 1 : -1;
   ctx.save();
@@ -227,6 +306,7 @@ export function drawPrisoner(ctx, p, s, t, x, feetY) {
     ctx.fillStyle = 'rgba(0,0,0,0.35)';
     ctx.beginPath(); ctx.ellipse(0, 0.5, 13, 2.6, 0, 0, Math.PI * 2); ctx.fill();
   }
+  if (pose.roll) ctx.rotate(pose.roll * f);
   if (p.flash > 0) glow(ctx, 0, -40, 60, `rgba(170,210,255,${0.55 * Math.min(1, p.flash)})`);
 
   const hip = { x: 0, y: pose.hipY };
@@ -293,6 +373,18 @@ export function drawPrisoner(ctx, p, s, t, x, feetY) {
   ctx.fillStyle = shadeG;
   ctx.beginPath(); ctx.arc(hx, hy, DIM.headR, 0, Math.PI * 2); ctx.fill();
   hair(ctx, look, hx, hy, DIM.headR, face);
+
+  if (p.alive && !p.collapsed && environment.temperature >= FACILITY.heat.uneasy) {
+    // A few glints on the face and a darkened collar read at CCTV scale.
+    ctx.fillStyle = 'rgba(10,20,20,0.2)';
+    ctx.beginPath(); ctx.ellipse(sh.x, sh.y + 4, 5, 2.4, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = 'rgba(225,246,235,0.95)';
+    ctx.lineWidth = environment.temperature >= FACILITY.heat.dangerous ? 1.2 : 0.8;
+    for (let i = 0; i < 3; i++) {
+      const drop = (t * 0.35 + i * 0.29) % 1;
+      ctx.beginPath(); ctx.moveTo(hx + face * (3 + i * 1.7), hy - 3 + drop * 9); ctx.lineTo(hx + face * (3 + i * 1.7), hy - 0.5 + drop * 9); ctx.stroke();
+    }
+  }
 
   // Near arm on top.
   const na = limb(ctx, sh.x + f * 2, sh.y + 1, pose.arms[0].a, DIM.upper, pose.arms[0].e, DIM.fore, f, 4.6, 4.2, look.top);

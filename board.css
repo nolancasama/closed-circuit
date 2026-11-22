@@ -83,6 +83,8 @@
 .gauge-dial { width: 100%; height: var(--gauge-h); display: block; }
 .g-face { fill: var(--cream); stroke: #0e0f0c; stroke-width: 2.5; }
 .g-zone { fill: none; stroke-width: 4.5; }
+/* Range colours also style text; arcs must never inherit their solid fill. */
+.g-zone.g-red, .g-zone.g-amber, .g-zone.g-green { fill: none; }
 .g-red { stroke: #b8392b; fill: #9a2d21; } .g-amber { stroke: #c88b2b; fill: #8f5f14; } .g-green { stroke: #4c8a49; fill: #2f6b32; } .g-dim { fill: #5a574c; }
 .g-tick { stroke: #2a2a24; stroke-width: 0.7; }
 .g-tick.major { stroke-width: 1.3; }
@@ -381,3 +383,199 @@
   .desk[data-board="expanded"] .console { --gauge-h: 74px; }
 }
 .tog-bat .tog-handle { height: 17px; }
+
+/* ---------- Control Room v2: fixed five-panel desk ---------- */
+.console { overflow: visible; min-width: 0; gap: 5px; }
+.console .power { order: 0; }
+.console .instruments { order: 1; }
+.console .systems { order: 2; }
+.console .doors { order: 3; }
+.console .overrides { order: 4; }
+.console .panel { min-width: 0; padding: 7px 9px 8px; }
+.console .panel h3 { margin: 0 4px 5px; font-size: 10px; letter-spacing: .12em; min-height: 17px; }
+.power-instrument { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr); gap: 6px; align-items: center; margin-bottom: 4px; }
+.power-instrument .gauge { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-rows: auto 1fr; column-gap: 5px; padding: 3px; align-items: center; }
+.power-instrument .gauge-dial { grid-column: 1; grid-row: 1 / 3; height: 66px; }
+.power-instrument .gauge-title { grid-column: 2; grid-row: 1; font-size: 8px; white-space: normal; }
+.power-instrument .gauge-read { grid-column: 2; grid-row: 2; font-size: 9px; white-space: normal; line-height: 1.2; }
+.mainline { display: grid; grid-template-columns: auto 1fr; gap: 4px; align-content: center; font-size: 9px; line-height: 1.25; }
+.mainline .plate { grid-column: 1 / -1; font-size: 8px; text-align: center; }
+.mainline .main-text { white-space: normal; }
+.bank { grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 3px; }
+.cct { gap: 1px; padding: 3px 1px; }
+.cct-no { font-size: 8px; letter-spacing: 0; }
+.cct-top { gap: 3px; }
+.cct-top .lamp { width: 10px; height: 10px; }
+.cct .tog { min-width: 44px; min-height: 48px; padding: 1px 3px; }
+.cct .tog-well { height: 29px; }
+.cct .tog-leg { font-size: 8px; }
+.cct-name { font-size: 8px; min-height: 24px; padding: 1px; }
+.cct-amps { font-size: 8px; }
+.lockout { font-size: 7px; width: 51px; padding: 2px 1px 2px 7px; }
+.lockout::before { width: 3px; height: 3px; left: 2px; }
+
+/* A thermal cutout has a black reset head and a white pop-out trip collar. */
+.branch-breaker { position: relative; min-width: 44px; height: 32px; padding: 0 2px; background: transparent; border: 0; cursor: pointer; }
+.branch-flag { position: absolute; top: 5px; left: calc(50% - 9px); width: 18px; height: 13px; border-radius: 5px; background: #d6d2bf; border: 1px solid #10110e; transform: translateY(2px); transition: transform 70ms; box-shadow: 0 1px 2px #000; }
+.branch-cap { position: absolute; top: 5px; left: calc(50% - 8px); width: 16px; height: 14px; border: 1px solid #080907; border-radius: 4px; background: linear-gradient(#5a5b50, #1a1b16); box-shadow: 0 2px 1px #0a0b09; transition: transform 70ms; }
+.branch-breaker.tripped .branch-cap { transform: translateY(-4px); background: linear-gradient(#68695c, #292b23); }
+.branch-breaker.tripped .branch-flag { transform: translateY(3px); }
+.branch-breaker:active .branch-cap { transform: translateY(2px); }
+.branch-legend { position: absolute; bottom: 1px; left: 0; width: 100%; color: var(--engrave-dim); font: 7px var(--mono); letter-spacing: .04em; }
+.branch-breaker.tripped .branch-legend { color: #fff4ce; }
+.branch-breaker.tripped { background: radial-gradient(ellipse at 50% 30%, #a2732540, transparent 65%); }
+
+.selector-bank { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5px; }
+.selector { min-width: 0; padding: 4px 2px; border-radius: 3px; background: #0002; box-shadow: inset 0 1px 3px #0007; }
+.selector-title { display: flex; align-items: center; justify-content: center; gap: 4px; }
+.selector-title .plate { font-size: 8px; padding: 1px 3px; letter-spacing: .04em; }
+.selector-title .lamp { width: 10px; height: 10px; border-width: 1px; }
+.rotary { display: grid; justify-items: center; gap: 1px; min-width: 0; }
+.rotary-positions { width: 100%; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.rotary-detent { display: flex; flex-direction: column; align-items: center; justify-content: end; gap: 2px; min-width: 0; min-height: 25px; padding: 2px 0; border: 0; background: transparent; color: var(--engrave-dim); font: 8px var(--mono); cursor: pointer; }
+.detent-mark { width: 2px; height: 4px; background: #aaa58d; box-shadow: 0 1px 0 #000; }
+.rotary-detent.selected { color: #ffdf9c; }
+.rotary-detent.selected .detent-mark { background: #ffe1a4; }
+.rotary-dial { position: relative; display: grid; place-items: center; width: 50px; height: 49px; min-height: 44px; padding: 3px; background: radial-gradient(circle, #161813 0 61%, #6d6e5e 63%, #20221b 70%, transparent 72%); border: 0; border-radius: 50%; cursor: grab; touch-action: none; }
+.rotary-dial:active { cursor: grabbing; }
+.rotary-knob { position: relative; width: 38px; height: 38px; border-radius: 50%; background: repeating-conic-gradient(#303229 0deg 6deg, #202219 6deg 12deg); border: 1px solid #090a07; box-shadow: inset 1px 2px 2px #fff3, inset -1px -2px 2px #000a, 1px 3px 4px #000b; transition: transform 75ms cubic-bezier(.4,0,.2,1); }
+.rotary-knob::before { content: ''; position: absolute; left: 12px; right: 12px; top: 2px; bottom: 2px; border-radius: 6px; background: linear-gradient(90deg, #10110d, #4b4d40 40%, #33362a 65%, #141610); border: 1px solid #11120c; box-shadow: 1px 0 2px #000; }
+.rotary-pointer { position: absolute; left: calc(50% - 1px); top: 4px; width: 2px; height: 8px; background: #e9dbc0; border-radius: 1px; box-shadow: 0 0 1px #fff; }
+.rotary-read { color: var(--engrave); font: 8px/1.2 var(--mono); min-height: 10px; letter-spacing: .06em; white-space: nowrap; }
+.rotary.armed .rotary-read { color: #ffcb80; animation: pulse .7s infinite; font-size: 7px; }
+.thermometers { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 3px; margin-top: 5px; }
+.thermometer .gauge-title { font-size: 8px; padding: 1px 3px; }
+.thermometer .gauge-dial { height: 48px; }
+.thermometer .gauge-read { font-size: 9px; min-height: 13px; }
+.environment-status { display: flex; justify-content: center; gap: 15px; margin-top: 6px; }
+.environment-status .lamp-legend { font-size: 8px; }
+.system-gauges { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; margin-bottom: 5px; }
+.system-gauges .gauge-dial { height: 52px; }
+.system-gauges .gauge-title { font-size: 8px; }
+.system-gauges .gauge-read { font-size: 9px; min-height: 13px; }
+.systems .mod-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 3px; }
+.systems .module { grid-column: span 2; padding: 3px; gap: 2px; }
+.systems .kind-status { grid-column: span 3; order: 1; }
+.systems .mod-head { gap: 2px; }
+.systems .module .plate { font-size: 7px; padding: 1px 2px; letter-spacing: .02em; }
+.systems .module:not(.kind-status) .mod-head { justify-content: center; min-height: 24px; text-align: center; }
+.systems .module:not(.kind-status) .mod-head .lamp { display: none; }
+.systems .mod-body { flex-direction: column-reverse; gap: 2px; }
+.systems .module:not(.kind-status) .stt { font-size: 8px; line-height: 1.15; max-height: 2.3em; overflow: hidden; text-align: center; }
+.systems .module:not(.kind-status) .stt:hover { overflow: visible; }
+.systems .kind-status .mod-body { display: none; }
+.systems .kind-status .mod-head { flex-direction: column; }
+.systems .mod-lamps { gap: 3px; flex-basis: auto; }
+.systems .lamp-legend { font-size: 6px; letter-spacing: 0; }
+.systems .mod-lamps .lamp { width: 9px; height: 9px; border-width: 1px; }
+.systems .kind-status .mod-head { flex-wrap: nowrap; align-items: stretch; }
+.systems .kind-status .mod-plate { text-align: center; }
+.systems .kind-status .mod-lamps { flex-basis: auto; display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 2px; }
+.systems .kind-status .lamp-wrap { min-width: 0; }
+.systems .module:not(.kind-status) .stt { max-height: none; overflow: visible; overflow-wrap: anywhere; }
+.systems .pb-lg { width: 48px; height: 48px; }
+.systems .guard { height: 48px; }
+.systems .hold-cap { font-size: 7px; min-height: 8px; }
+.systems .keysw { min-height: 48px; }
+.systems .keysw-barrel { width: 30px; height: 30px; }
+.systems .keysw-txt { font-size: 8px; }
+.console .msg { position: absolute; z-index: 6; bottom: 5px; left: 5px; right: 5px; padding: 5px 6px; margin: 0; background: #090b08f5; border: 1px solid #5c5944; box-shadow: 0 2px 8px #000a; }
+.console .module, .console .door, .stop-module { position: relative; }
+.console .module .msg, .console .door .msg { left: 0; right: 0; bottom: 0; font-size: 9px; }
+.door-bank { gap: 3px; }
+.door { gap: 3px; padding: 3px 1px; }
+.door-plate { font-size: 8px; letter-spacing: 0; }
+.door-lamps { gap: 4px; }
+.door-lamps .lamp-wrap { flex-direction: column; gap: 2px; }
+.door-lamps .lamp { width: 10px; height: 10px; border-width: 1px; }
+.door-lamps .lamp-legend { font-size: 7px; }
+.door .tog { min-width: 44px; min-height: 54px; }
+.door .tog-well { height: 35px; width: 26px; }
+.door .tog-leg { font-size: 8px; }
+.door .stt { font-size: 8px; line-height: 1.15; text-align: center; }
+.exit-panel { gap: 3px; padding: 4px; margin-top: 4px; }
+.exit-panel .plate { font-size: 8px; }
+.exit-lamps { gap: 6px; }
+.exit-lamps .lamp-wrap { flex-direction: column; gap: 2px; }
+.exit-lamps .lamp { width: 10px; height: 10px; border-width: 1px; }
+.exit-lamps .lamp-legend { font-size: 7px; }
+.exit-panel .stt { font-size: 9px; }
+.door-extra .module { padding: 3px 4px; gap: 2px; }
+.door-extra .mod-body { gap: 4px; }
+.door-extra .module .plate { font-size: 8px; }
+.door-extra .stt { font-size: 8px; }
+.door-extra .guard { flex: none; height: 44px; width: 48px; }
+.door-extra .hold-cap { font-size: 7px; }
+.stop-module { display: flex; flex-direction: column; align-items: center; gap: 5px; padding: 6px 0 12px; }
+.stop-module .plate { font-size: 9px; color: #ffd8b6; }
+.stop-caption { font: 8px var(--mono); text-align: center; color: var(--engrave-dim); }
+.e-stop-mushroom { background: radial-gradient(circle, #10110c 0 52%, #c5a332 54% 72%, #493b12 74%, transparent 76%); }
+.e-stop-mushroom .pb-cap { inset: 6px; box-shadow: 0 4px 0 #651308, 0 6px 6px #000c; }
+.overrides .bay { min-height: 48px; margin-top: 5px; }
+.bay-stencil { padding: 2px; font-size: 8px; }
+.bay-stencil b { font-size: 8px; letter-spacing: .08em; }
+.bay-stencil span { display: none; }
+.bay.open { position: absolute; z-index: 9; bottom: 7px; right: 7px; width: min(430px, calc(100vw - 30px)); max-height: 230px; overflow-y: auto; padding: 5px; border: 2px solid #b39235; box-shadow: 0 8px 25px #000c; }
+.bay.open .bay-cover { display: none; }
+.bay.open .bay-content { grid-template-columns: repeat(2, minmax(0, 1fr)); padding-top: 0; }
+.bay.open .module { padding: 4px; }
+.bay.open .plate { font-size: 8px; }
+.bay.open .stt { font-size: 9px; }
+#keypad { top: auto; bottom: 12px; right: 20%; max-height: min(450px, calc(100dvh - 70px)); }
+
+@media (min-width: 981px) and (min-aspect-ratio: 1001/1000) {
+  .console { display: grid; grid-template-columns: minmax(0, 2.6fr) minmax(0, 1.75fr) minmax(0, 2.05fr) minmax(0, 1.45fr) minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); align-items: stretch; }
+  .console .panel { height: auto; min-height: 0; }
+}
+@media (min-width: 981px) and (min-aspect-ratio: 1001/1000) and (max-height: 700px) {
+  .console .panel { padding: 5px 7px 6px; }
+  .console .panel h3 { font-size: 9px; min-height: 15px; margin-bottom: 3px; }
+  .power-instrument .gauge-dial { height: 55px; }
+  .system-gauges .gauge-dial { height: 40px; }
+  .system-gauges { margin-bottom: 3px; }
+  .system-gauges .gauge-title { font-size: 7px; }
+  .system-gauges .gauge-read { font-size: 8px; }
+  .thermometer .gauge-dial { height: 40px; }
+  .selector { padding: 2px 1px; }
+  .selector-title .plate { font-size: 7px; }
+  .rotary-dial { height: 44px; }
+  .rotary-detent { min-height: 22px; font-size: 7px; }
+  .systems .kind-status .mod-head { gap: 1px; }
+  .systems .module:not(.kind-status) .mod-head { min-height: 19px; }
+  .environment-status { margin-top: 4px; }
+  .door-extra:not(:empty) { margin-top: 3px; }
+}
+@media (max-width: 980px), (max-aspect-ratio: 1/1) {
+  .console { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-auto-rows: max-content; align-content: start; overflow-y: auto; overflow-x: hidden; }
+  .console .power { grid-column: 1 / -1; }
+  .console .panel { height: auto; min-height: max-content; }
+  .power-instrument { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .power-instrument .gauge-dial { height: 75px; }
+  #keypad { right: 8px; bottom: 8px; }
+}
+@media (max-width: 600px) {
+  .console { grid-template-columns: minmax(0, 1fr); gap: 7px; }
+  .bank { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; }
+  .cct .tog { min-height: 56px; }
+  .cct .tog-well { height: 36px; }
+  .cct-name, .cct-amps { font-size: 9px; }
+  .branch-breaker { height: 44px; }
+  .branch-cap, .branch-flag { top: 9px; }
+  .branch-legend { bottom: 4px; font-size: 8px; }
+  .rotary-detent { min-height: 44px; font-size: 10px; }
+  .rotary-dial { width: 62px; height: 60px; }
+  .rotary-knob { width: 46px; height: 46px; }
+  .rotary-knob::before { left: 16px; right: 16px; }
+  .rotary-read { font-size: 10px; }
+  .selector-title .plate { font-size: 10px; }
+  .thermometer .gauge-dial, .system-gauges .gauge-dial { height: 70px; }
+  .systems .module:not(.kind-status) .stt { font-size: 9px; max-height: none; }
+  .systems .module .plate { font-size: 9px; }
+  .systems .lamp-legend { font-size: 8px; }
+  .systems .kind-status { min-height: 44px; }
+  .door .tog { min-height: 64px; }
+  .door .tog-well { height: 44px; }
+  .door .stt { font-size: 10px; }
+  .stop-module { padding: 12px 0; }
+  .bay.open { position: relative; width: 100%; bottom: auto; right: auto; max-height: none; }
+}

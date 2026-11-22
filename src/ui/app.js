@@ -14,13 +14,13 @@ export function createApp({ renderer, audio, onRestart }) {
   const $ = id => document.getElementById(id);
   const desk = $('desk'), monitors = $('monitors'), mainScreen = $('mainScreen'), mainCanvas = $('mainCanvas');
   const subtitles = $('subtitles'), logEl = $('log'), banner = $('banner'), clock = $('clock');
-  const inspectEl = $('inspect'), notesEl = $('notes'), keypadEl = $('keypad');
+  const inspectEl = $('inspect'), notesEl = $('notes'), keypadEl = $('keypad'), discoveriesEl = $('discoveries');
   const titleScreen = $('titleScreen'), pauseScreen = $('pauseScreen'), endScreen = $('endScreen');
   const tiles = [...document.querySelectorAll('.tile')];
 
   let game = null;
-  let mode = 'grid';
-  let focus = null;
+  let mode = 'focus';
+  let focus = 'A';
   let logSeq = 0;
   let subKey = '';
   let inspecting = null;
@@ -30,9 +30,30 @@ export function createApp({ renderer, audio, onRestart }) {
   let ended = false;
   let notesSeen = 0;
   let notesKey = '';
+  let discoveriesKey = '';
+  let stampUntil = 0;
+  let overlayReturn = null;
+
+  // Fit the CRT bezel to its image; spare rack width belongs to the previews.
+  // Hardware grows only when both desk height and panel width permit it.
+  const fitHardware = () => {
+    const wide = window.matchMedia('(min-width: 981px) and (min-aspect-ratio: 1001/1000)').matches;
+    const consoleEl = $('console');
+    desk.style.setProperty('--main-monitor-width', `${Math.max(240, (monitors.clientHeight - 101) * 16 / 9 + 36)}px`);
+    const scale = wide ? Math.max(1, Math.min(1.45, window.innerWidth / 1366, consoleEl.clientHeight / 285)) : 1;
+    desk.style.setProperty('--hardware-scale', scale.toFixed(3));
+  };
+  new ResizeObserver(fitHardware).observe(desk);
 
   renderer.attach(mainCanvas, { feed: 'A', main: true });
+  for (const tile of $('mainMosaic').querySelectorAll('[data-camera]')) {
+    renderer.attach(tile.querySelector('canvas'), { feed: tile.dataset.camera });
+    tile.addEventListener('click', () => focusFeed(tile.dataset.camera, true));
+  }
   for (const t of tiles) {
+    const room = t.dataset.feed;
+    t.prepend(h('span', { class: 'crt-plate' }, `CAM ${String(FEEDS.indexOf(room) + 1).padStart(2, '0')} · ${room === 'hall' ? 'HALL' : 'CHAMBER ' + room}`));
+    t.append(t.querySelector('.tile-chip'));
     renderer.attach(t.querySelector('canvas'), { feed: t.dataset.feed });
     t.addEventListener('click', () => focusFeed(t.dataset.feed, true));
     t.setAttribute('aria-label', `Camera ${t.dataset.feed}`);
@@ -52,12 +73,12 @@ export function createApp({ renderer, audio, onRestart }) {
   const consoleUi = createConsole({
     rootEl: $('console'), instrumentsEl: $('instrumentsPanel'), powerEl: $('powerPanel'), systemsEl: $('systemsPanel'), doorsEl: $('doorsPanel'), overridesEl: $('overridesPanel'),
     keypadEl, dispatch: act, audio,
-    onKeypad: open => { if (open) { closeNotes(); focusFeed('A'); } },
+    onKeypad: open => { if (open) { closeNotes(); closeDiscoveries(); focusFeed('A'); } },
   });
 
   // ---------- feeds ----------
   function placeSubtitles() {
-    const host = mode === 'focus' ? mainScreen : monitors;
+    const host = mainScreen;
     if (subtitles.parentElement !== host) host.append(subtitles);
   }
 
@@ -69,7 +90,7 @@ export function createApp({ renderer, audio, onRestart }) {
     focus = feed;
     desk.dataset.mode = 'focus';
     renderer.setFeed(mainCanvas, feed);
-    for (const t of tiles) setClass(t, 'active', t.dataset.feed === feed);
+    for (const t of tiles) { t.hidden = t.dataset.feed === feed; setClass(t, 'active', t.dataset.feed === feed); }
     setClass($('btnGrid'), 'on', false);
     placeSubtitles();
     if (fromUser && game) {
@@ -85,9 +106,8 @@ export function createApp({ renderer, audio, onRestart }) {
   function showGrid() {
     closeInspect();
     mode = 'grid';
-    focus = null;
     desk.dataset.mode = 'grid';
-    for (const t of tiles) t.classList.remove('active');
+    for (const t of tiles) { t.hidden = t.dataset.feed === focus; t.classList.remove('active'); }
     setClass($('btnGrid'), 'on', true);
     placeSubtitles();
   }
@@ -135,21 +155,7 @@ export function createApp({ renderer, audio, onRestart }) {
     if (hs) inspect(hs.id);
   });
   $('inspectClose').addEventListener('click', closeInspect);
-  $('btnAll').addEventListener('click', () => { audio.ui('click'); showGrid(); });
-  // Expanded control board: a remembered per-viewer preference.
-  const BOARD_KEY = 'closed-circuit.board';
-  function setBoard(expanded, save = true) {
-    desk.dataset.board = expanded ? 'expanded' : 'compact';
-    $('btnBoard').setAttribute('aria-pressed', expanded ? 'true' : 'false');
-    setClass($('btnBoard'), 'on', expanded);
-    if (save) try { localStorage.setItem(BOARD_KEY, expanded ? '1' : '0'); } catch { /* storage unavailable */ }
-  }
-  const toggleBoard = () => { audio.ui('click'); setBoard(desk.dataset.board !== 'expanded'); };
-  // Default: expanded (the CSS only widens the board on wide screens).
-  let boardPref = true;
-  try { boardPref = localStorage.getItem(BOARD_KEY) !== '0'; } catch { /* storage unavailable */ }
-  setBoard(boardPref, false);
-  $('btnBoard').addEventListener('click', toggleBoard);
+  $('btnAll').addEventListener('click', () => { audio.ui('click'); mode === 'grid' ? focusFeed(focus) : showGrid(); });
 
   $('btnGrid').addEventListener('click', () => { audio.ui('click'); if (mode === 'grid') focusFeed(focus || 'A'); else showGrid(); });
 
@@ -165,14 +171,39 @@ export function createApp({ renderer, audio, onRestart }) {
     );
   }
   function openNotes() {
+    closeDiscoveries();
     consoleUi.closeKeypad();
+    overlayReturn = document.activeElement;
     renderNotes();
     notesEl.hidden = false;
+    notesEl.querySelector('button').focus({ preventScroll: true });
     notesSeen = game.state.noteOrder.length;
     notesKey = game.state.noteOrder.join(',') + JSON.stringify(game.state.noteOrder.map(id => game.state.notes[id].text));
   }
-  function closeNotes() { notesEl.hidden = true; }
+  function closeNotes() { const open = !notesEl.hidden; notesEl.hidden = true; if (open) overlayReturn?.focus({ preventScroll: true }); }
   $('btnNotes').addEventListener('click', () => { audio.ui('click'); if (notesEl.hidden) openNotes(); else closeNotes(); });
+
+  // Discoveries are a separate clipboard: never reveal unfound titles.
+  function renderDiscoveries() {
+    const { found, total } = game.state.discoveries;
+    discoveriesKey = found.map(d => d.id).join(',');
+    discoveriesEl.replaceChildren(
+      h('h2', { id: 'discoveriesTitle' }, `DISCOVERIES · ${found.length} / ${total}`, h('button', { class: 'xbtn', type: 'button', onclick: closeDiscoveries }, 'CLOSE')),
+      h('p', { class: 'clipboard-caption' }, 'FACILITY OBSERVATIONS / OPERATOR COPY'),
+      ...found.map(d => h('article', { class: 'discovery-entry' }, h('h4', {}, d.title), h('p', {}, d.text))),
+      ...Array.from({ length: total - found.length }, () => h('div', { class: 'discovery-slot', 'aria-label': 'Undiscovered entry' })),
+    );
+  }
+  function openDiscoveries() {
+    closeNotes();
+    consoleUi.closeKeypad();
+    overlayReturn = document.activeElement;
+    renderDiscoveries();
+    discoveriesEl.hidden = false;
+    discoveriesEl.querySelector('button').focus({ preventScroll: true });
+  }
+  function closeDiscoveries() { const open = !discoveriesEl.hidden; discoveriesEl.hidden = true; if (open) overlayReturn?.focus({ preventScroll: true }); }
+  $('btnDiscoveries').addEventListener('click', () => { audio.ui('click'); discoveriesEl.hidden ? openDiscoveries() : closeDiscoveries(); });
 
   // ---------- overlays ----------
   function begin() {
@@ -214,6 +245,7 @@ export function createApp({ renderer, audio, onRestart }) {
     ended = true;
     closeInspect();
     closeNotes();
+    closeDiscoveries();
     consoleUi.closeKeypad();
     setText($('endKicker'), e.kind === 'walked' ? 'SHIFT ABANDONED' : 'SHIFT REPORT');
     setText($('endTitle'), e.title);
@@ -244,6 +276,7 @@ export function createApp({ renderer, audio, onRestart }) {
     if (e.key === 'Escape') {
       if (consoleUi.keypadOpen) consoleUi.closeKeypad();
       else if (!notesEl.hidden) closeNotes();
+      else if (!discoveriesEl.hidden) closeDiscoveries();
       else if (inspecting) closeInspect();
       else if (paused) resume();
       else pause();
@@ -255,7 +288,7 @@ export function createApp({ renderer, audio, onRestart }) {
     if (n >= 1 && n <= 4) focusFeed(FEEDS[n - 1], true);
     else if (e.key === 'g' || e.key === 'G') mode === 'grid' ? focusFeed(focus || 'A', true) : showGrid();
     else if (e.key === 'n' || e.key === 'N') notesEl.hidden ? openNotes() : closeNotes();
-    else if (e.key === 'b' || e.key === 'B') toggleBoard();
+    else if (e.key === 'd' || e.key === 'D') discoveriesEl.hidden ? openDiscoveries() : closeDiscoveries();
   });
 
   // Title screen static.
@@ -316,9 +349,15 @@ export function createApp({ renderer, audio, onRestart }) {
         const hr = p.alive && !p.escaped ? `<span class="hr">♥${heartRate(p, st.t)}</span> ` : '';
         html = `<span class="who" style="color:${COLOR[feed]}">${p.name.toUpperCase()}</span> ${hr}<span class="st">${p.loc === feed || !p.alive || p.escaped ? ss.text : 'IN HALL'}</span>${talking.has(feed) ? ' <span class="talk">◉ TALKING</span>' : ''}`;
       }
+      html += ` <span class="temperature">${Math.round(st.facility.rooms[feed].temperature)}°C</span>`;
       if (chip.innerHTML !== html) chip.innerHTML = html;
       setClass(t, 'alert', alert && !(mode === 'focus' && focus === feed));
     }
+    const room = sc.rooms[focus];
+    setText($('mainPlate'), mode === 'grid' ? 'MULTIPLEX / CAM 01–04' : `${room.cam} · ${room.label}`);
+    const p = st.prisoners[focus];
+    const status = p ? `${p.name.toUpperCase()} · ${p.alive && !p.escaped ? heartRate(p, st.t) + ' BPM · ' : ''}${sc.subjectStatus(api, p).text}` : 'HALL · ' + (sc.feedStatus(api, 'hall')?.text || 'EXIT SEALED');
+    setText($('mainStatus'), mode === 'grid' ? 'ALL CHANNELS LIVE · SELECT A CAMERA TO INSPECT' : `${status} · ${Math.round(st.facility.rooms[focus].temperature)}°C`);
   }
 
   function update() {
@@ -334,6 +373,10 @@ export function createApp({ renderer, audio, onRestart }) {
     updateLog();
     updateSubtitles();
     updateTiles();
+    const discoveries = st.discoveries;
+    setText($('discoveriesCount'), `${discoveries.found.length} / ${discoveries.total}`);
+    if (!discoveriesEl.hidden && discoveriesKey !== discoveries.found.map(d => d.id).join(',')) renderDiscoveries();
+    if (stampUntil && performance.now() >= stampUntil) { $('discoveryStamp').hidden = true; stampUntil = 0; }
     const count = st.noteOrder.length;
     setText($('notesCount'), String(count));
     setClass($('notesCount'), 'fresh', count > notesSeen);
@@ -351,6 +394,15 @@ export function createApp({ renderer, audio, onRestart }) {
   function onEvents(events) {
     for (const ev of events) {
       if (ev.type === 'ending') setTimeout(showEnding, ev.kind === 'walked' ? 600 : 1400);
+      if (ev.type === 'discovery') {
+        const entry = game.state.discoveries.found.find(d => d.id === ev.id);
+        setText($('discoveryStamp'), `OBSERVATION RECORDED · ${entry?.title || 'DISCOVERY'} · D`);
+        $('discoveryStamp').hidden = false;
+        $('discoveryStamp').getAnimations().forEach(animation => animation.cancel());
+        $('discoveryStamp').animate([{ opacity: 0 }, { opacity: 1, offset: .08 }, { opacity: 1, offset: .72 }, { opacity: 0 }], { duration: 3200, fill: 'forwards' });
+        stampUntil = performance.now() + 3200;
+        audio.ui('key');
+      }
     }
   }
 
@@ -365,10 +417,15 @@ export function createApp({ renderer, audio, onRestart }) {
     logEl.replaceChildren();
     closeInspect();
     closeNotes();
+    closeDiscoveries();
+    discoveriesKey = '';
+    stampUntil = 0;
+    $('discoveryStamp').hidden = true;
     intercom.setGame(g);
     consoleUi.setGame(g);
-    showGrid();
-    desk.dataset.tab = 'intercom';
+    mode = 'grid'; // force the initial focus through the normal swap path
+    focusFeed('A');
+    desk.dataset.tab = 'console';
     if (immediately) begin();
     else { started = false; titleScreen.hidden = false; }
   }

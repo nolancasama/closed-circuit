@@ -1,7 +1,12 @@
 // Mechanisms, console controls, beats and endings for "The Three Chambers".
 // Pure: everything goes through the engine api.
-import { FLOOD, EXIT, RESTRAINT, MOVE, HOLD, STRESS } from '../../config.js';
-import { spots, CODES, SYMBOLS, symbolName, PLAQUE } from './data.js';
+import { FLOOD, EXIT, RESTRAINT, MOVE, HOLD, STRESS, FACILITY, POWER } from '../../config.js';
+import { spots, CODES, SYMBOLS, symbolName, PLAQUE, facility } from './data.js';
+import * as Facility from '../../engine/facility.js';
+import * as Discoveries from '../../engine/discoveries.js';
+import * as Commentary from '../../engine/commentary.js';
+import { discoveries } from './discoveries.js';
+import { commentary } from './commentary.js';
 
 export const ORDER = ['A', 'B', 'C'];
 
@@ -47,7 +52,7 @@ export const active = p => p.alive && !p.escaped;
 export function lit(api, room) {
   if (room === 'A') return !api.s.aDark && api.live('lightsA');
   if (room === 'out') return true;
-  return api.live('lightsBC');
+  return api.live({ B: 'lightsB', C: 'lightsC', hall: 'lightsHall' }[room]);
 }
 
 export const codeText = s => s.code.map(symbolName).join(', ');
@@ -62,7 +67,7 @@ export function notePlaque(api) {
   k.plaque = k.lever = k.damper = true;
 }
 export function noteBoard(api) {
-  api.note('board', 'Switchboard rules (Room C)', 'Isolators are manual — only Ruth can close them. Then switch circuits from the console.\nMain breaker: 10 A. Going over trips it and everything goes dark; Ruth resets it.\nLIGHTS A 2 · LIGHTS B·C·HALL 2 · INCINERATOR 4 · DRAIN PUMP 4 · VENT FAN 3 · EXIT MOTOR 5');
+  api.note('board', 'Switchboard rules (Room C)', 'Isolators are manual — only Ruth can close them. Then switch circuits from the console.\nMain breaker: 10 A. Going over trips it and everything goes dark; Ruth resets it.\nLIGHTS A 2 · LIGHTS B 0.75 · LIGHTS C 0.75 · LIGHTS HALL 0.5 · INCINERATOR 4 · DRAIN PUMP 4 · VENT FAN LOW 2 / MED 3 / HIGH 4 · EXIT MOTOR 5. Branch breakers cut faults; reset them from the console.');
   api.s.know.board = true;
 }
 export function noteExit(api) {
@@ -159,7 +164,7 @@ function updateFlood(api, dt) {
       f.stall = null;
       api.log('ok', 'DRAIN RESUMED');
     }
-    if (!reason) rate -= 1 / FLOOD.drainTime;
+    if (!reason) rate -= Facility.airflow(api) / POWER.fanFlow.MED / FLOOD.drainTime;
   }
   f.rate = rate;
   f.level = Math.max(0, Math.min(1, f.level + rate * dt));
@@ -185,8 +190,6 @@ function floodFailed(api) {
   api.sfx('flatline', 'B');
   api.emit({ type: 'interference', room: 'B', strength: 1.4 });
   api.log('alert', 'CHAMBER B — NO VITAL SIGNS');
-  api.stress('A', 18);
-  api.stress('C', 18);
   api.after(3, () => api.pa('The water was patient, Operator. You were not.'));
   api.after(9, () => {
     const c = api.prisoner('C');
@@ -208,7 +211,8 @@ function floodDone(api) {
   api.sfx('shackle', 'B');
   api.log('ok', 'DRAIN CYCLE COMPLETE — SHACKLE B RELEASED');
   api.stress('B', -30);
-  api.say('B', "It's gone... it drained. And the shackle just clicked open!");
+  api.stimulus({ kind: 'help', pid: 'B', helpful: true });
+  if (active(b)) api.say('B', "It's gone... it drained. And the shackle just clicked open!");
   api.after(3.5, () => {
     if (!active(b)) return;
     s.know.plate = true;
@@ -244,8 +248,6 @@ function wrongCode(api) {
     api.emit({ type: 'interference', room: 'A', strength: 1.5 });
     api.lose('A', 'chair');
     api.log('alert', 'RESTRAINT CHAIR ENGAGED — CHAMBER A: NO VITAL SIGNS');
-    api.stress('B', 15);
-    api.stress('C', 15);
     api.after(3, () => api.pa('Three chances. Two warnings. One chair.'));
     api.after(8, () => {
       const c = api.prisoner('C');
@@ -261,6 +263,7 @@ function wrongCode(api) {
   api.say('A', r.attempts === 2
     ? "AAH—! What did you DO?! That was wrong — that was the wrong order!"
     : 'AAAGH! Stop! Please... one more and I think it kills me.');
+  api.stimulus({ kind: 'shock', pid: 'A', room: 'A', harmful: true });
   const msg = `INCORRECT SEQUENCE — ${r.attempts} ATTEMPT${r.attempts === 1 ? '' : 'S'} LEFT${r.attempts === 1 ? ' · NEXT FAILURE IS FINAL' : ''}`;
   api.log('alert', msg);
   return { ok: false, msg };
@@ -279,6 +282,7 @@ function releaseRestraints(api) {
   api.sfx('restraint-release', 'A');
   api.log('ok', 'RESTRAINTS RELEASED — CHAMBER A');
   api.stress('A', -25);
+  api.stimulus({ kind: 'help', pid: 'A', helpful: true });
   api.say('A', "They're open... they're open! Oh god. Thank you. Thank you.");
   api.after(4, () => api.pa('Very good. Some locks open with words.'));
   progress(api);
@@ -287,6 +291,7 @@ function releaseRestraints(api) {
 
 function restraintPress(api, { action, symbol }) {
   const r = api.s.restraint;
+  if (!api.prisoner('A').alive) return refuse(api, 'CHAMBER A IS NOT RESPONDING');
   if (r.released) return refuse(api, 'RESTRAINTS ALREADY RELEASED');
   if (r.dead) return refuse(api, 'CHAMBER A IS NOT RESPONDING');
   switch (action) {
@@ -409,15 +414,7 @@ function updateExit(api) {
 
 function onLights(api, room, on) {
   const s = api.s;
-  if (room !== 'A') {
-    if (!on) for (const id of ORDER) {
-      const p = api.prisoner(id);
-      if (active(p) && p.loc === room && once(api, `dark-${id}-${Math.floor(api.t / 60)}`)) {
-        api.say(id, id === 'C' ? 'And there go the lights.' : "The lights— it's pitch black in here!");
-      }
-    }
-    return;
-  }
+  if (room !== 'A') return;
   const a = api.prisoner('A');
   if (!active(a) || a.loc !== 'A') return;
   if (on) {
@@ -430,8 +427,6 @@ function onLights(api, room, on) {
     } else if (once(api, 'a-first-light')) {
       api.say('A', a.immobile ? 'Lights... finally. Oh god. Look at this chair.' : 'Lights. Thank you.');
     }
-  } else if (a.immobile && s.symbols < 4) {
-    api.say('A', "No — the light's gone again!");
   }
 }
 
@@ -443,6 +438,7 @@ function updateLights(api) {
     if (now !== s.litPrev[room]) {
       s.litPrev[room] = now;
       api.emit({ type: 'lights', room, on: now });
+      api.stimulus({ kind: 'light', room, on: now });
       onLights(api, room, now);
     }
   }
@@ -508,20 +504,33 @@ function updateHints(api) {
 
 export function init(api) {
   api.state.s = createState(api);
+  Facility.init(api, facility);
+  Discoveries.init(api, discoveries);
+  Commentary.init(api, commentary);
+  api.state.commentary.bootPending = true;
   api.log('tip', 'Tap a feed to enlarge it. Bracketed objects can be zoomed.');
   api.log('tip', 'Pick a channel — A, B or C — to talk on the intercom.');
   api.after(1.2, () => {
     api.pa('Good evening, Operator. Three guests are staying with us tonight.');
     api.pa('Each of them holds something the others need. You have eyes, a voice, and a console.');
     api.pa('The facility will not help them. Perhaps you will.');
+    api.state.commentary.bootPending = false;
   });
 }
 
 export function update(api, dt) {
+  Facility.update(api, dt);
   updateFlood(api, dt);
   updateExit(api);
   updateLights(api);
   updateHints(api);
+  Discoveries.update(api, discoveries);
+  Commentary.update(api, commentary);
+}
+
+export function onEvent(api, event) {
+  if (api.state.discoveries) Discoveries.observe(api, event);
+  if (api.state.commentary) Commentary.observe(api, event, commentary);
 }
 
 export function check(api) {
@@ -538,7 +547,9 @@ export function environment(api, p) {
   const dark = p.loc !== 'out' && !lit(api, p.loc);
   const alarm = api.state.alarm.on && api.state.alarm.room === p.loc;
   const rate = p.id === 'B' && p.loc === 'B' && s.flood.phase === 'filling' ? 0.2 + 2.0 * s.flood.level : 0;
-  return { dark, alarm, rate };
+  const smoky = api.state.facility.rooms[p.loc]?.coughing;
+  const taskSpeed = p.id === 'C' ? (dark ? FACILITY.darkWorkFactor : 1) * (smoky ? FACILITY.smokeWorkFactor : 1) : 1;
+  return { dark, alarm, rate, taskSpeed };
 }
 
 export function speedFor(api, p) {
@@ -675,6 +686,11 @@ function restraintView(api) {
 const someoneInside = api => ORDER.some(id => active(api.prisoner(id)));
 
 export const controls = [
+  ...['fan-speed', 'steam-heat', 'branch-reset', 'e-stop'].map(id => ({
+    id, section: 'systems', kind: id === 'branch-reset' ? 'status' : id === 'e-stop' ? 'hold' : 'button',
+    view: api => ({ label: id.toUpperCase(), status: id === 'fan-speed' ? api.state.facility.fanSpeed : id === 'steam-heat' ? api.state.facility.steamHeat : '', ready: true, action: id === 'e-stop' ? 'STOP' : 'SET' }),
+    press: (api, payload) => Facility.control(api, id, payload),
+  })),
   { id: 'restraint', section: 'systems', kind: 'keypad', view: restraintView, press: restraintPress },
   { id: 'aux', section: 'systems', kind: 'status', view: auxView, press: () => null },
   { id: 'drain', section: 'systems', kind: 'hold', view: drainView, press: drainPress },
@@ -853,6 +869,7 @@ export function subjectStatus(api, p) {
   const s = api.s;
   if (!p.alive) return { text: 'NO VITAL SIGNS', tone: 'alert' };
   if (p.escaped) return { text: 'ESCAPED', tone: 'ok' };
+  if (p.collapsed) return { text: 'COLLAPSED — RECOVERABLE', tone: 'alert' };
   if (p.hesitating) return { text: 'HESITATING', tone: 'alert' };
   if (p.panicked) return { text: 'PANICKING', tone: 'alert' };
   if (p.immobile) return { text: 'RESTRAINED', tone: 'warn' };
@@ -903,7 +920,7 @@ export function ending(api, kind) {
     if (!p.alive) {
       return {
         id, name: p.name, fate: 'lost',
-        text: p.lostCause === 'flood' ? 'Chamber B filled before the drain opened.' : 'The chair engaged after the third wrong sequence.',
+        text: ({ flood: 'Chamber B filled before the drain opened.', heat: 'Sustained heat exposure; no vital signs.', shock: 'Repeated electrical shocks in the floodwater; no vital signs.' })[p.lostCause] || 'The chair engaged after the third wrong sequence.',
       };
     }
     return { id, name: p.name, fate: 'left', text: `Left behind in ${whereText(p)}.` };

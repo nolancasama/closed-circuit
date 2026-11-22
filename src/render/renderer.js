@@ -1,9 +1,10 @@
 // Draws every attached CCTV canvas from game state: room, prisoners, lighting,
 // camera effects and on-screen display. Reads state only.
-import { ROOM_W, ROOM_H, FLOOR_Y, CLOCK_START } from '../config.js';
+import { ROOM_W, ROOM_H, FLOOR_Y, CLOCK_START, POWER, FACILITY } from '../config.js';
 import { makeCanvas, clamp, MONO } from './util.js';
 import { noiseTiles, scanlinePattern } from './textures.js';
 import { drawPrisoner } from './characters.js';
+import { writing, atmosphere, electrical } from './facility.js';
 import { chamberA } from './rooms/chamberA.js';
 import { chamberB } from './rooms/chamberB.js';
 import { chamberC } from './rooms/chamberC.js';
@@ -39,7 +40,9 @@ export function createRenderer() {
       exitOpen: 0,
       fanAngle: 0,
       fanSpeed: 0,
-      flash: { A: 0 },
+      flash: { A: 0, B: 0 },
+      sparks: { B: 0 },
+      lostAt: {},
     };
   }
 
@@ -64,7 +67,7 @@ export function createRenderer() {
     const view = {
       canvas, ctx: canvas.getContext('2d'), feed, main, dirty: true,
       zoom: { x: ROOM_W / 2, y: ROOM_H / 2, z: 1 }, target: { x: ROOM_W / 2, y: ROOM_H / 2, z: 1 },
-      hover: null, light: null, scan: null, cam: { scale: 1, ox: 0, oy: 0 },
+      hover: null, light: null, scan: null, lastDraw: -Infinity, cam: { scale: 1, ox: 0, oy: 0 },
     };
     views.set(canvas, view);
     ro?.observe(canvas);
@@ -141,7 +144,13 @@ export function createRenderer() {
         fx.startup[ev.room] = 1.1;
       } else if (ev.type === 'lost') {
         const room = game.state.prisoners[ev.pid].loc;
+        fx.lostAt[ev.pid] = game.state.t;
         if (room in fx.glitch) fx.glitch[room] = Math.max(fx.glitch[room], 1.6);
+      } else if (ev.type === 'sparks' && ev.room === 'B') {
+        fx.sparks.B = 1.2;
+        fx.glitch.B = Math.max(fx.glitch.B, 0.6);
+      } else if (ev.type === 'shock' && ev.room === 'B') {
+        fx.flash.B = 1;
       } else if (ev.type === 'sfx' && ev.name === 'shock') {
         fx.flash.A = 1;
       }
@@ -175,7 +184,8 @@ export function createRenderer() {
       A: flickerOf('A', dt), B: flickerOf('B', dt), C: flickerOf('C', dt), hall: flickerOf('hall', dt), hall2: flickerOf('hall2', dt),
     };
     const shared = {
-      st, s, t: now, simT: st.t, fx, speaking, roomLit, hallLit, opProgress,
+      st, s, t: st.t, simT: st.t, fx, speaking, roomLit, hallLit, opProgress,
+      live: api.live,
       boltA: boltA(api), boltB: boltB(api), exitPower: exitPower(api), incinerator: api.live('incinerator'),
     };
     const envs = {};
@@ -185,7 +195,8 @@ export function createRenderer() {
         lit: room === 'hall' ? hallLit : roomLit[room],
         flicker: flick[room],
         flicker2: flick.hall2,
-        dead: (room === 'A' && s.restraint.dead) || (room === 'B' && s.flood.phase === 'failed'),
+        room: st.facility.rooms[room],
+        dead: ['A', 'B'].includes(room) && !st.prisoners[room].alive,
         alarmHere: st.alarm.on && st.alarm.room === room,
       };
     }
@@ -205,10 +216,12 @@ export function createRenderer() {
     }
     const exitTarget = st.doors.exit.open ? 1 : 0;
     fx.exitOpen += clamp(exitTarget - fx.exitOpen, -dt * 0.8, dt * 0.8);
-    const fanTarget = game.api.live('vent') ? 9 : 0;
+    const fanTarget = game.api.live('vent') ? 9 * POWER.fanFlow[st.facility.fanSpeed] : 0;
     fx.fanSpeed += clamp(fanTarget - fx.fanSpeed, -dt * 3, dt * 5);
     fx.fanAngle += fx.fanSpeed * dt;
     fx.flash.A = Math.max(0, fx.flash.A - dt * 0.7);
+    fx.flash.B = Math.max(0, fx.flash.B - dt * 2.5);
+    fx.sparks.B = Math.max(0, fx.sparks.B - dt);
   }
 
   function drawRoom(v, env, dt) {
@@ -241,10 +254,30 @@ export function createRenderer() {
       if (p.loc !== feed || p.escaped) continue;
       if (!p.alive && p.lostCause === 'flood') continue;
       const feetY = painter.feetY ? painter.feetY(p, env) : FLOOR_Y;
-      drawPrisoner(ctx, p, env.s, env.t, p.x, feetY);
+      drawPrisoner(ctx, p, env.s, env.t, p.x, feetY, {
+        simT: env.simT, temperature: env.room.temperature,
+        deathAge: env.simT - (fx.lostAt[p.id] ?? -Infinity),
+      });
     }
     painter.paintFront(ctx, env);
-    light(v, painter.lights(env), scale, ox, oy);
+    // A faint submerged outline remains after flood loss, rather than the
+    // prisoner disappearing when the opaque water surface covers the room.
+    if (feed === 'B') {
+      const p = game.state.prisoners.B;
+      if (!p.alive && p.lostCause === 'flood' && p.loc === feed) {
+        ctx.save();
+        ctx.globalAlpha = 0.32;
+        drawPrisoner(ctx, p, env.s, env.t, p.x, painter.feetY(p, env), { simT: env.simT });
+        ctx.restore();
+      }
+    }
+    const lighting = painter.lights(env);
+    // IR cameras retain a flat near-field return when room lighting is lost.
+    if (!env.lit) lighting.dark = Math.min(lighting.dark, 0.5);
+    light(v, lighting, scale, ox, oy);
+    writing(ctx, feed, env);
+    atmosphere(ctx, feed, env);
+    if (feed === 'B') electrical(ctx, env);
     if (v.main && v.zoom.z < 1.08 && v.target.z === 1) hotspots(v, env);
     ctx.setTransform(1, 0, 0, 1, 0, 0);
   }
@@ -326,6 +359,23 @@ export function createRenderer() {
     ctx.globalCompositeOperation = 'source-over';
     ctx.fillStyle = 'rgba(30,62,46,0.08)';
     ctx.fillRect(0, 0, W, H);
+    if (!env.lit) {
+      ctx.globalCompositeOperation = 'color';
+      ctx.fillStyle = '#86a891';
+      ctx.fillRect(0, 0, W, H);
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.fillStyle = 'rgba(105,160,120,0.075)';
+      ctx.fillRect(0, 0, W, H);
+    }
+    if (env.room.temperature > FACILITY.heat.uneasy) {
+      // Narrow displaced bands refract edges without a full-frame blur pass.
+      const strength = clamp((env.room.temperature - FACILITY.heat.uneasy) / (FACILITY.heat.dangerous - FACILITY.heat.uneasy), 0, 1);
+      for (let i = 0; i < 14; i++) {
+        const y = H * (0.15 + i * 0.048);
+        const offset = Math.sin(env.simT * 3.3 + i * 1.7) * W * 0.005 * strength;
+        ctx.drawImage(canvas, 0, y, W, Math.max(1, H * 0.024), offset, y, W, Math.max(1, H * 0.024));
+      }
+    }
 
     const tile = noise[(frame + feed.length) % noise.length];
     const gs = Math.max(1, W / 520) * 1.6;
@@ -393,7 +443,7 @@ export function createRenderer() {
     const W = canvas.width, H = canvas.height;
     const sc = game.scenario;
     const room = sc.rooms[feed];
-    const fs = Math.max(10, Math.round(H * (v.main ? 0.036 : 0.085)));
+    const fs = v.main ? Math.max(10, Math.round(H * 0.036)) : clamp(Math.round(H * 0.085), 6, 10);
     const pad = Math.round(fs * 0.7);
     ctx.save();
     ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -406,18 +456,24 @@ export function createRenderer() {
       ctx.fillStyle = color;
       ctx.fillText(str, x, y);
     };
-    if (!v.main) {
-      put(room.cam, pad * 0.7, pad * 0.6);
-      if (Math.floor(env.t * 1.2) % 2 === 0) { ctx.fillStyle = '#ff3b2f'; ctx.beginPath(); ctx.arc(W - pad, pad * 0.6 + fs * 0.5, fs * 0.28, 0, Math.PI * 2); ctx.fill(); }
-      ctx.restore();
-      return;
-    }
-    put(`${room.cam}  ${room.label}`, pad, pad);
     const secs = CLOCK_START + Math.floor(game.state.t);
     const hh = String(Math.floor(secs / 3600) % 24).padStart(2, '0');
     const mm = String(Math.floor(secs / 60) % 60).padStart(2, '0');
     const ss = String(secs % 60).padStart(2, '0');
-    const stamp = `${dateText}  ${hh}:${mm}:${ss}`;
+    const timeStamp = `${hh}:${mm}:${ss}`;
+    if (!v.main) {
+      put(room.cam, pad * 0.7, pad * 0.6);
+      if (ctx.measureText(`${room.cam}   REC`).width + pad * 3 < W) put('REC', W - pad - fs * 0.8, pad * 0.6, 'right', '#ff6a5c');
+      if (Math.floor(env.t * 1.2) % 2 === 0) { ctx.fillStyle = '#ff3b2f'; ctx.beginPath(); ctx.arc(W - pad, pad * 0.6 + fs * 0.5, fs * 0.28, 0, Math.PI * 2); ctx.fill(); }
+      put(timeStamp, W - pad, H - pad - fs, 'right');
+      if (!env.lit) put('IR', pad, H - pad - fs, 'left', '#c4e8ce');
+      ctx.restore();
+      return;
+    }
+    put(`${room.cam}  ${room.label}`, pad, pad);
+    const fullStamp = `${dateText}  ${timeStamp}`;
+    const stamp = ctx.measureText(`${room.cam}  ${room.label}   REC   ${fullStamp}`).width < W - pad * 2
+      ? fullStamp : timeStamp;
     put(stamp, W - pad, pad, 'right');
     const recX = W - pad - ctx.measureText(stamp).width - fs * 0.9 - ctx.measureText('REC').width;
     put('REC', recX, pad, 'left', '#ff6a5c');
@@ -428,7 +484,8 @@ export function createRenderer() {
     const status = sc.feedStatus(game.api, feed);
     const bottom = H - pad - fs;
     if (status) put(status.text, pad, bottom, 'left', status.tone === 'alert' ? '#ff8a7a' : '#e8f0ea');
-    else if (!env.lit) put('LOW LIGHT  GAIN +18dB', pad, bottom, 'left', '#c9d4cc');
+    else if (!env.lit) put('IR  GAIN +18dB', pad, bottom, 'left', '#c9d4cc');
+    if (!env.lit) put('IR', pad, pad + fs * 1.4, 'left', '#c4e8ce');
     if (v.zoom.z > 1.05) put(`DIGITAL ZOOM ${v.zoom.z.toFixed(1)}×`, W - pad, bottom, 'right', '#bff5cf');
     ctx.restore();
   }
@@ -442,10 +499,12 @@ export function createRenderer() {
     const envs = makeEnvs(now, dt);
     for (const v of views.values()) {
       if (!v.canvas.isConnected || v.canvas.offsetParent === null) continue;
-      if (!v.main && frame % 2 === 1 && !v.dirty) continue;
+      if (!v.main && now - v.lastDraw < 1 / 12 && !v.dirty) continue;
       if (v.dirty && !resize(v)) continue;
       const env = envs[v.feed];
-      drawRoom(v, env, v.main ? dt : dt * 2);
+      const drawDt = v.main ? dt : Math.min(0.2, now - v.lastDraw);
+      v.lastDraw = now;
+      drawRoom(v, env, drawDt);
       post(v, env);
       osd(v, env);
     }
